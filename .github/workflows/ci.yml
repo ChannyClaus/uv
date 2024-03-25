@@ -100,7 +100,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: curl -sSf https://sshx.io/get | sh -s run
+      # - run: curl -sSf https://sshx.io/get | sh -s run
       - name: "Cargo test"
         run: |
           cargo nextest run --workspace --status-level skip --failure-output immediate-final --no-fail-fast -j 12 --final-status-level slow
