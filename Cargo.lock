@@ -4558,6 +4558,7 @@ dependencies = [
  "owo-colors",
  "pep440_rs",
  "pep508_rs",
+ "petgraph",
  "platform-tags",
  "predicates",
  "pypi-types",

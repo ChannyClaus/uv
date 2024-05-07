@@ -1,9 +1,13 @@
 use std::cmp::max;
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::result;
 
 use anyhow::Result;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
+use petgraph::algo::toposort;
+use petgraph::data::Build;
 use serde::Serialize;
 use tracing::debug;
 use unicode_width::UnicodeWidthStr;
@@ -70,64 +74,91 @@ pub(crate) fn pip_list(
         return Ok(ExitStatus::Success);
     }
 
-    match format {
-        ListFormat::Columns => {
-            // The package name and version are always present.
-            let mut columns = vec![
-                Column {
-                    header: String::from("Package"),
-                    rows: results
-                        .iter()
-                        .copied()
-                        .map(|dist| dist.name().to_string())
-                        .collect_vec(),
-                },
-                Column {
-                    header: String::from("Version"),
-                    rows: results
-                        .iter()
-                        .map(|dist| dist.version().to_string())
-                        .collect_vec(),
-                },
-            ];
-
-            // Editable column is only displayed if at least one editable package is found.
-            if results.iter().copied().any(InstalledDist::is_editable) {
-                columns.push(Column {
-                    header: String::from("Editable project location"),
-                    rows: results
-                        .iter()
-                        .map(|dist| dist.as_editable())
-                        .map(|url| {
-                            url.map(|url| {
-                                url.to_file_path().unwrap().simplified_display().to_string()
-                            })
-                            .unwrap_or_default()
-                        })
-                        .collect_vec(),
-                });
-            }
-
-            for elems in MultiZip(columns.iter().map(Column::fmt).collect_vec()) {
-                writeln!(printer.stdout(), "{}", elems.join(" ").trim_end())?;
-            }
-        }
-        ListFormat::Json => {
-            let rows = results.iter().copied().map(Entry::from).collect_vec();
-            let output = serde_json::to_string(&rows)?;
-            writeln!(printer.stdout(), "{output}")?;
-        }
-        ListFormat::Freeze => {
-            for dist in &results {
-                writeln!(
-                    printer.stdout(),
-                    "{}=={}",
-                    dist.name().bold(),
-                    dist.version()
-                )?;
+    let mut package_index = HashMap::new();
+    let mut g = petgraph::Graph::<&PackageName, ()>::new();
+    for result in &results {
+        package_index.insert(result.name(), g.add_node(result.name()));
+    }
+    for result in &results {
+        for required in result.metadata().unwrap().requires_dist {
+            if let Some(req) = package_index.get(&required.name) {
+                g.add_edge(*req, *package_index.get(&result.name()).unwrap(), ());
             }
         }
     }
+    let v = toposort(&g, None).unwrap();
+    println!("v: {:#?}", v);
+    // println!(
+    //     "result: {:#?}",
+    //     results[0].metadata().unwrap().requires_dist
+    // );
+    // println!("package_index: {:#?}", package_index);
+    // for result in results {
+    //     for dep in result.metadata() {
+    //         if let Some(node) = g.node_indices().find(|i| g[*i] == dep) {
+    //             g.add_edge(g.node_index(result.name()), node, ());
+    //         }
+    //     }
+    // }
+    // println!("graph: {:#?}", g);
+    // match format {
+    //     ListFormat::Columns => {
+    //         // The package name and version are always present.
+    //         let mut columns = vec![
+    //             Column {
+    //                 header: String::from("Package"),
+    //                 rows: results
+    //                     .iter()
+    //                     .copied()
+    //                     .map(|dist| dist.name().to_string())
+    //                     .collect_vec(),
+    //             },
+    //             Column {
+    //                 header: String::from("Version"),
+    //                 rows: results
+    //                     .iter()
+    //                     .map(|dist| dist.version().to_string())
+    //                     .collect_vec(),
+    //             },
+    //         ];
+
+    //         // Editable column is only displayed if at least one editable package is found.
+    //         if results.iter().copied().any(InstalledDist::is_editable) {
+    //             columns.push(Column {
+    //                 header: String::from("Editable project location"),
+    //                 rows: results
+    //                     .iter()
+    //                     .map(|dist| dist.as_editable())
+    //                     .map(|url| {
+    //                         url.map(|url| {
+    //                             url.to_file_path().unwrap().simplified_display().to_string()
+    //                         })
+    //                         .unwrap_or_default()
+    //                     })
+    //                     .collect_vec(),
+    //             });
+    //         }
+
+    //         for elems in MultiZip(columns.iter().map(Column::fmt).collect_vec()) {
+    //             writeln!(printer.stdout(), "{}", elems.join(" ").trim_end())?;
+    //         }
+    //     }
+    //     ListFormat::Json => {
+    //         let rows = results.iter().copied().map(Entry::from).collect_vec();
+    //         let output = serde_json::to_string(&rows)?;
+    //         writeln!(printer.stdout(), "{output}")?;
+    //     }
+    //     ListFormat::Freeze => {
+    //         for dist in &results {
+    //             writeln!(
+    //                 printer.stdout(),
+    //                 "{}=={}",
+    //                 dist.name().bold(),
+    //                 dist.version()
+    //             )?;
+    //         }
+    //     }
+    // }
 
     // Validate that the environment is consistent.
     if strict {
