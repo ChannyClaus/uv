@@ -6,13 +6,14 @@ use std::result;
 use anyhow::Result;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
+use pep508_rs::Requirement;
 use petgraph::algo::toposort;
 use petgraph::data::Build;
 use serde::Serialize;
 use tracing::debug;
 use unicode_width::UnicodeWidthStr;
 
-use distribution_types::{InstalledDist, Name};
+use distribution_types::{DistributionMetadata, InstalledDist, Name};
 use uv_cache::Cache;
 use uv_fs::Simplified;
 use uv_installer::SitePackages;
@@ -75,9 +76,17 @@ pub(crate) fn pip_list(
     }
 
     let mut package_index = HashMap::new();
-    let mut g = petgraph::Graph::<&PackageName, ()>::new();
+    let mut g = petgraph::Graph::<Requirement, ()>::new();
     for result in &results {
-        package_index.insert(result.name(), g.add_node(result.name()));
+        package_index.insert(
+            result.name(),
+            g.add_node(Requirement {
+                name: result.name().clone(),
+                extras: vec![],
+                version_or_url: result.version_or_url(),
+                marker: None,
+            }),
+        );
     }
     for result in &results {
         for required in result.metadata().unwrap().requires_dist {
