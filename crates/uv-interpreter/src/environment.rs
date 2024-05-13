@@ -111,6 +111,8 @@ impl PythonEnvironment {
     }
 
     /// Returns an iterator over the `site-packages` directories inside a virtual environment.
+    /// The iterator consists of `purelib`, `platlib`, and `sys.path` of
+    /// the interpreter (in that order) with duplicates removed.
     ///
     /// In most cases, `purelib` and `platlib` will be the same, and so the iterator will contain
     /// a single element; however, in some distributions, they may be different.
@@ -123,11 +125,14 @@ impl PythonEnvironment {
         } else {
             // de-duplicate while preserving order
             let mut dedup_set = HashSet::new();
-            let mut site_packages_dirs =
-                vec![self.interpreter.purelib(), self.interpreter.platlib()]
-                    .into_iter()
-                    .filter(|path| fs_err::canonicalize(path).is_ok())
-                    .collect::<Vec<_>>();
+            let mut site_packages_dirs = vec![
+                self.interpreter.purelib(),
+                self.interpreter.platlib(),
+                self.interpreter.sys_path(),
+            ]
+            .into_iter()
+            .filter(|path| fs_err::canonicalize(path).is_ok())
+            .collect::<Vec<_>>();
             site_packages_dirs.retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
             debug!(
                 "Site packages: {:?}",
