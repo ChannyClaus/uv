@@ -1,6 +1,8 @@
 use itertools::Either;
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 use same_file::is_same_file;
 
@@ -121,15 +123,26 @@ impl PythonEnvironment {
         if let Some(target) = self.interpreter.target() {
             Either::Left(std::iter::once(target.root()))
         } else {
-            let purelib = self.interpreter.purelib();
-            let platlib = self.interpreter.platlib();
-            Either::Right(std::iter::once(purelib).chain(
-                if purelib == platlib || is_same_file(purelib, platlib).unwrap_or(false) {
-                    None
-                } else {
-                    Some(platlib)
-                },
-            ))
+            let mut site_packages_dirs = Vec::new();
+            site_packages_dirs.push(self.interpreter.purelib());
+            site_packages_dirs.push(self.interpreter.platlib());
+
+            // de-duplicate while preserving order
+            let mut dedup_set = HashSet::new();
+            let mut valid_site_packages = site_packages_dirs
+                .into_iter()
+                .filter(|path| fs_err::canonicalize(path).is_ok())
+                .collect::<Vec<_>>();
+            valid_site_packages
+                .retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
+            debug!(
+                "Site packages: {:?}",
+                valid_site_packages
+                    .iter()
+                    .map(|p| p.simplified_display())
+                    .collect::<Vec<_>>()
+            );
+            Either::Right(valid_site_packages.into_iter())
         }
     }
 
