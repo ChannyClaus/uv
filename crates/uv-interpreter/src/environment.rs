@@ -123,26 +123,22 @@ impl PythonEnvironment {
         if let Some(target) = self.interpreter.target() {
             Either::Left(std::iter::once(target.root()))
         } else {
-            let mut site_packages_dirs = Vec::new();
-            site_packages_dirs.push(self.interpreter.purelib());
-            site_packages_dirs.push(self.interpreter.platlib());
-
             // de-duplicate while preserving order
             let mut dedup_set = HashSet::new();
-            let mut valid_site_packages = site_packages_dirs
-                .into_iter()
-                .filter(|path| fs_err::canonicalize(path).is_ok())
-                .collect::<Vec<_>>();
-            valid_site_packages
-                .retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
+            let mut site_packages_dirs =
+                vec![self.interpreter.purelib(), self.interpreter.platlib()]
+                    .into_iter()
+                    .filter(|path| fs_err::canonicalize(path).is_ok())
+                    .collect::<Vec<_>>();
+            site_packages_dirs.retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
             debug!(
                 "Site packages: {:?}",
-                valid_site_packages
+                site_packages_dirs
                     .iter()
                     .map(|p| p.simplified_display())
                     .collect::<Vec<_>>()
             );
-            Either::Right(valid_site_packages.into_iter())
+            Either::Right(site_packages_dirs.into_iter())
         }
     }
 
