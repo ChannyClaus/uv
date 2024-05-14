@@ -1,7 +1,7 @@
 use itertools::Either;
 use std::collections::HashSet;
-use std::env;
 use std::path::{Path, PathBuf};
+use std::{env, path};
 use tracing::debug;
 
 use uv_cache::Cache;
@@ -128,7 +128,12 @@ impl PythonEnvironment {
             let mut site_packages_dirs =
                 vec![self.interpreter.purelib(), self.interpreter.platlib()]
                     .into_iter()
-                    .chain(self.interpreter.sys_path().into_iter().map(|p| p.as_path()))
+                    .chain(
+                        self.interpreter
+                            .sys_path()
+                            .into_iter()
+                            .map(path::PathBuf::as_path),
+                    )
                     .filter(|path| fs_err::canonicalize(path).is_ok())
                     .collect::<Vec<_>>();
             site_packages_dirs.retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
