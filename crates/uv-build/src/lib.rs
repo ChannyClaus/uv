@@ -28,7 +28,7 @@ use tracing::{debug, info_span, instrument, Instrument};
 use distribution_types::{ParsedUrlError, Requirement, Resolution};
 use pep440_rs::Version;
 use pep508_rs::PackageName;
-use uv_configuration::{BuildKind, ConfigSettings, SetupPyStrategy};
+use uv_configuration::{BuildKind, ConfigSettings, Reinstall, SetupPyStrategy};
 use uv_fs::{PythonExt, Simplified};
 use uv_interpreter::{Interpreter, PythonEnvironment};
 use uv_types::{BuildContext, BuildIsolation, SourceBuildTrait};
@@ -440,7 +440,7 @@ impl SourceBuild {
             .await?;
 
             build_context
-                .install(&resolved_requirements, &venv)
+                .install(&resolved_requirements, &venv, &Reinstall::None)
                 .await
                 .map_err(|err| {
                     Error::RequirementsInstall("build-system.requires (install)", err)
@@ -1003,7 +1003,7 @@ async fn create_pep517_build_environment(
             .map_err(|err| Error::RequirementsInstall("build-system.requires (resolve)", err))?;
 
         build_context
-            .install(&resolution, venv)
+            .install(&resolution, venv, &Reinstall::None)
             .await
             .map_err(|err| Error::RequirementsInstall("build-system.requires (install)", err))?;
     }

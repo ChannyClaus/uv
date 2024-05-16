@@ -6,7 +6,7 @@ use anyhow::Result;
 use distribution_types::{IndexLocations, InstalledDist, Requirement, Resolution, SourceDist};
 use pep508_rs::PackageName;
 use uv_cache::Cache;
-use uv_configuration::{BuildKind, NoBinary, NoBuild, SetupPyStrategy};
+use uv_configuration::{BuildKind, NoBinary, NoBuild, Reinstall, SetupPyStrategy};
 use uv_interpreter::{Interpreter, PythonEnvironment};
 
 use crate::BuildIsolation;
@@ -87,6 +87,7 @@ pub trait BuildContext {
         &'a self,
         resolution: &'a Resolution,
         venv: &'a PythonEnvironment,
+        reinstall: &'a Reinstall,
     ) -> impl Future<Output = Result<()>> + 'a;
 
     /// Setup a source distribution build by installing the required dependencies. A wrapper for

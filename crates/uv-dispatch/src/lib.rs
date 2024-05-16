@@ -166,16 +166,18 @@ impl<'a> BuildContext for BuildDispatch<'a> {
     }
 
     #[instrument(
-        skip(self, resolution, venv),
+        skip(self, resolution, venv, reinstall),
         fields(
             resolution = resolution.distributions().map(ToString::to_string).join(", "),
-            venv = ?venv.root()
+            venv = ?venv.root(),
+            reinstall = ?reinstall
         )
     )]
     async fn install<'data>(
         &'data self,
         resolution: &'data Resolution,
         venv: &'data PythonEnvironment,
+        reinstall: &'data Reinstall,
     ) -> Result<()> {
         debug!(
             "Installing in {} in {}",

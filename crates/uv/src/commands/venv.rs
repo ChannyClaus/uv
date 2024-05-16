@@ -15,7 +15,7 @@ use install_wheel_rs::linker::LinkMode;
 use uv_auth::store_credentials_from_url;
 use uv_cache::Cache;
 use uv_client::{Connectivity, FlatIndexClient, RegistryClientBuilder};
-use uv_configuration::{Concurrency, KeyringProviderType};
+use uv_configuration::{Concurrency, KeyringProviderType, Reinstall};
 use uv_configuration::{ConfigSettings, IndexStrategy, NoBinary, NoBuild, SetupPyStrategy};
 use uv_dispatch::BuildDispatch;
 use uv_fs::Simplified;
@@ -241,7 +241,7 @@ async fn venv_impl(
 
         // Install into the environment.
         build_dispatch
-            .install(&resolution, &venv)
+            .install(&resolution, &venv, &Reinstall::All)
             .await
             .map_err(VenvError::Seed)?;
 
