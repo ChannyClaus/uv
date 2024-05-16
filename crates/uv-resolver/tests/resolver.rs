@@ -16,7 +16,7 @@ use platform_tags::{Arch, Os, Platform, Tags};
 use uv_cache::Cache;
 use uv_client::RegistryClientBuilder;
 use uv_configuration::{
-    BuildKind, Concurrency, Constraints, NoBinary, NoBuild, Overrides, SetupPyStrategy,
+    BuildKind, Concurrency, Constraints, NoBinary, NoBuild, Overrides, Reinstall, SetupPyStrategy,
 };
 use uv_distribution::DistributionDatabase;
 use uv_interpreter::{find_default_python, Interpreter, PythonEnvironment};
@@ -89,7 +89,12 @@ impl BuildContext for DummyContext {
         panic!("The test should not need to build source distributions")
     }
 
-    async fn install<'a>(&'a self, _: &'a Resolution, _: &'a PythonEnvironment) -> Result<()> {
+    async fn install<'a>(
+        &'a self,
+        _: &'a Resolution,
+        _: &'a PythonEnvironment,
+        _: &'a Reinstall,
+    ) -> Result<()> {
         panic!("The test should not need to build source distributions")
     }
 
