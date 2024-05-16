@@ -202,7 +202,7 @@ impl<'a> BuildContext for BuildDispatch<'a> {
             extraneous: _,
         } = Planner::with_requirements(&resolution.requirements()).build(
             site_packages,
-            &Reinstall::None,
+            reinstall,
             &NoBinary::None,
             &HashStrategy::None,
             self.index_locations,
