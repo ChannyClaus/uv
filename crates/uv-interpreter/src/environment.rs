@@ -131,7 +131,7 @@ impl PythonEnvironment {
                     .chain(
                         self.interpreter
                             .sys_path()
-                            .into_iter()
+                            .iter()
                             .map(path::PathBuf::as_path),
                     )
                     .filter(|path| fs_err::canonicalize(path).is_ok())
