@@ -1,9 +1,12 @@
 use std::cmp::max;
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use anyhow::Result;
+use distribution_types::DistributionMetadata;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
+use pep508_rs::Requirement;
 use serde::Serialize;
 use tracing::debug;
 use unicode_width::UnicodeWidthStr;
@@ -59,6 +62,29 @@ pub(crate) fn pip_list(
         .sorted_unstable_by(|a, b| a.name().cmp(b.name()).then(a.version().cmp(b.version())))
         .collect_vec();
 
+    let mut package_index = HashMap::new();
+    let mut g = petgraph::Graph::<Requirement, ()>::new();
+    for result in &results {
+        package_index.insert(
+            result.name(),
+            g.add_node(Requirement {
+                name: result.name().clone(),
+                extras: vec![],
+                version_or_url: result.version_or_url(),
+                marker: None,
+                origin: None,
+            }),
+        );
+    }
+    for result in &results {
+        for required in result.metadata().unwrap().requires_dist {
+            if let Some(req) = package_index.get(&required.name) {
+                g.add_edge(*req, *package_index.get(&result.name()).unwrap(), ());
+            }
+        }
+    }
+    let v = toposort(&g, None).unwrap();
+    println!("v: {:#?}", v);
     Ok(ExitStatus::Success)
 
     // match format {
