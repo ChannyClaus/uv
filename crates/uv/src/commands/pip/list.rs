@@ -59,81 +59,83 @@ pub(crate) fn pip_list(
         .sorted_unstable_by(|a, b| a.name().cmp(b.name()).then(a.version().cmp(b.version())))
         .collect_vec();
 
-    match format {
-        ListFormat::Json => {
-            let rows = results.iter().copied().map(Entry::from).collect_vec();
-            let output = serde_json::to_string(&rows)?;
-            writeln!(printer.stdout(), "{output}")?;
-        }
-        ListFormat::Columns if results.is_empty() => {}
-        ListFormat::Columns => {
-            // The package name and version are always present.
-            let mut columns = vec![
-                Column {
-                    header: String::from("Package"),
-                    rows: results
-                        .iter()
-                        .copied()
-                        .map(|dist| dist.name().to_string())
-                        .collect_vec(),
-                },
-                Column {
-                    header: String::from("Version"),
-                    rows: results
-                        .iter()
-                        .map(|dist| dist.version().to_string())
-                        .collect_vec(),
-                },
-            ];
-
-            // Editable column is only displayed if at least one editable package is found.
-            if results.iter().copied().any(InstalledDist::is_editable) {
-                columns.push(Column {
-                    header: String::from("Editable project location"),
-                    rows: results
-                        .iter()
-                        .map(|dist| dist.as_editable())
-                        .map(|url| {
-                            url.map(|url| {
-                                url.to_file_path().unwrap().simplified_display().to_string()
-                            })
-                            .unwrap_or_default()
-                        })
-                        .collect_vec(),
-                });
-            }
-
-            for elems in MultiZip(columns.iter().map(Column::fmt).collect_vec()) {
-                writeln!(printer.stdout(), "{}", elems.join(" ").trim_end())?;
-            }
-        }
-        ListFormat::Freeze if results.is_empty() => {}
-        ListFormat::Freeze => {
-            for dist in &results {
-                writeln!(
-                    printer.stdout(),
-                    "{}=={}",
-                    dist.name().bold(),
-                    dist.version()
-                )?;
-            }
-        }
-    }
-
-    // Validate that the environment is consistent.
-    if strict {
-        for diagnostic in site_packages.diagnostics()? {
-            writeln!(
-                printer.stderr(),
-                "{}{} {}",
-                "warning".yellow().bold(),
-                ":".bold(),
-                diagnostic.message().bold()
-            )?;
-        }
-    }
-
     Ok(ExitStatus::Success)
+
+    // match format {
+    //     ListFormat::Json => {
+    //         let rows = results.iter().copied().map(Entry::from).collect_vec();
+    //         let output = serde_json::to_string(&rows)?;
+    //         writeln!(printer.stdout(), "{output}")?;
+    //     }
+    //     ListFormat::Columns if results.is_empty() => {}
+    //     ListFormat::Columns => {
+    //         // The package name and version are always present.
+    //         let mut columns = vec![
+    //             Column {
+    //                 header: String::from("Package"),
+    //                 rows: results
+    //                     .iter()
+    //                     .copied()
+    //                     .map(|dist| dist.name().to_string())
+    //                     .collect_vec(),
+    //             },
+    //             Column {
+    //                 header: String::from("Version"),
+    //                 rows: results
+    //                     .iter()
+    //                     .map(|dist| dist.version().to_string())
+    //                     .collect_vec(),
+    //             },
+    //         ];
+
+    //         // Editable column is only displayed if at least one editable package is found.
+    //         if results.iter().copied().any(InstalledDist::is_editable) {
+    //             columns.push(Column {
+    //                 header: String::from("Editable project location"),
+    //                 rows: results
+    //                     .iter()
+    //                     .map(|dist| dist.as_editable())
+    //                     .map(|url| {
+    //                         url.map(|url| {
+    //                             url.to_file_path().unwrap().simplified_display().to_string()
+    //                         })
+    //                         .unwrap_or_default()
+    //                     })
+    //                     .collect_vec(),
+    //             });
+    //         }
+
+    //         for elems in MultiZip(columns.iter().map(Column::fmt).collect_vec()) {
+    //             writeln!(printer.stdout(), "{}", elems.join(" ").trim_end())?;
+    //         }
+    //     }
+    //     ListFormat::Freeze if results.is_empty() => {}
+    //     ListFormat::Freeze => {
+    //         for dist in &results {
+    //             writeln!(
+    //                 printer.stdout(),
+    //                 "{}=={}",
+    //                 dist.name().bold(),
+    //                 dist.version()
+    //             )?;
+    //         }
+    //     }
+    // }
+
+    // // Validate that the environment is consistent.
+    // if strict {
+    //     for diagnostic in site_packages.diagnostics()? {
+    //         writeln!(
+    //             printer.stderr(),
+    //             "{}{} {}",
+    //             "warning".yellow().bold(),
+    //             ":".bold(),
+    //             diagnostic.message().bold()
+    //         )?;
+    //     }
+    // }
+
+    // Ok(ExitStatus::Success)
 }
 
 /// An entry in a JSON list of installed packages.
