@@ -172,6 +172,8 @@ impl PythonEnvironment {
     }
 
     /// Returns an iterator over the `site-packages` directories inside the environment.
+    /// The iterator consists of `purelib`, `platlib`, and `sys.path` of
+    /// the interpreter (in that order) with duplicates removed.
     ///
     /// In most cases, `purelib` and `platlib` will be the same, and so the iterator will contain
     /// a single element; however, in some distributions, they may be different.
@@ -182,15 +184,28 @@ impl PythonEnvironment {
         if let Some(target) = self.0.interpreter.target() {
             Either::Left(std::iter::once(target.root()))
         } else {
-            let purelib = self.0.interpreter.purelib();
-            let platlib = self.0.interpreter.platlib();
-            Either::Right(std::iter::once(purelib).chain(
-                if purelib == platlib || is_same_file(purelib, platlib).unwrap_or(false) {
-                    None
-                } else {
-                    Some(platlib)
-                },
-            ))
+            // de-duplicate while preserving order
+            let mut dedup_set = HashSet::new();
+            let mut site_packages_dirs =
+                vec![self.interpreter.purelib(), self.interpreter.platlib()]
+                    .into_iter()
+                    .chain(
+                        self.interpreter
+                            .sys_path()
+                            .iter()
+                            .map(path::PathBuf::as_path),
+                    )
+                    .filter(|path| fs_err::canonicalize(path).is_ok())
+                    .collect::<Vec<_>>();
+            site_packages_dirs.retain(|path| dedup_set.insert(fs_err::canonicalize(path).unwrap()));
+            debug!(
+                "Site packages: {:?}",
+                site_packages_dirs
+                    .iter()
+                    .map(|p| p.simplified_display())
+                    .collect::<Vec<_>>()
+            );
+            Either::Right(site_packages_dirs.into_iter())
         }
     }
 
