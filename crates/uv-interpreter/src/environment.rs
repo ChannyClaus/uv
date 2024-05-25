@@ -202,7 +202,7 @@ impl PythonEnvironment {
                 "Site packages: {:?}",
                 site_packages_dirs
                     .iter()
-                    .map(|p| p.simplified_display())
+                    .map(|p| p.display().to_string())
                     .collect::<Vec<_>>()
             );
             Either::Right(site_packages_dirs.into_iter())
