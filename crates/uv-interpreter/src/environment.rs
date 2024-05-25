@@ -1,7 +1,9 @@
 use itertools::Either;
-use std::env;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{env, path};
+use tracing::debug;
 
 use same_file::is_same_file;
 
@@ -187,10 +189,11 @@ impl PythonEnvironment {
             // de-duplicate while preserving order
             let mut dedup_set = HashSet::new();
             let mut site_packages_dirs =
-                vec![self.interpreter.purelib(), self.interpreter.platlib()]
+                vec![self.0.interpreter.purelib(), self.0.interpreter.platlib()]
                     .into_iter()
                     .chain(
-                        self.interpreter
+                        self.0
+                            .interpreter
                             .sys_path()
                             .iter()
                             .map(path::PathBuf::as_path),
