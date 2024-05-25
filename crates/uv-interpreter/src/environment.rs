@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{env, path};
 use tracing::debug;
-
-use same_file::is_same_file;
-
 use uv_cache::Cache;
 use uv_fs::{LockedFile, Simplified};
 
