@@ -7,6 +7,7 @@ use distribution_types::DistributionMetadata;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
 use pep508_rs::Requirement;
+use petgraph::algo::toposort;
 use serde::Serialize;
 use tracing::debug;
 use unicode_width::UnicodeWidthStr;
@@ -63,18 +64,9 @@ pub(crate) fn pip_list(
         .collect_vec();
 
     let mut package_index = HashMap::new();
-    let mut g = petgraph::Graph::<Requirement, ()>::new();
+    let mut g = petgraph::Graph::<&&InstalledDist, ()>::new();
     for result in &results {
-        package_index.insert(
-            result.name(),
-            g.add_node(Requirement {
-                name: result.name().clone(),
-                extras: vec![],
-                version_or_url: None,
-                marker: None,
-                origin: None,
-            }),
-        );
+        package_index.insert(result.name(), g.add_node(result));
     }
     for result in &results {
         for required in result.metadata().unwrap().requires_dist {
@@ -85,6 +77,9 @@ pub(crate) fn pip_list(
     }
     let v = toposort(&g, None).unwrap();
     println!("v: {:#?}", v);
+    for n in v {
+        println!("n: {:#?}", g[n].name());
+    }
     Ok(ExitStatus::Success)
 
     // match format {
