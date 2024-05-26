@@ -77,34 +77,40 @@ pub(crate) fn pip_list(
         }
     }
 
-    let v = toposort(&g, None).unwrap();
+    let mut v = toposort(&g, None).unwrap();
+    v.reverse();
     println!("v: {:#?}", v);
 
-    let visited: HashSet<PackageName> = HashSet::new();
+    let mut visited: HashSet<String> = HashSet::new();
     pub fn visit(
         installed_dist: &&InstalledDist,
-        visited: &HashSet<PackageName>,
+        visited: &mut HashSet<String>,
         g: &petgraph::prelude::Graph<&&InstalledDist, ()>,
         package_index: &HashMap<&PackageName, petgraph::prelude::NodeIndex>,
+        indent: usize,
     ) {
-        if visited.contains(installed_dist.name()) {
-            println!("visited already: {:#?}", installed_dist.name());
+        if visited.contains(&installed_dist.name().to_string()) {
+            // println!("visited already: {:#?}", installed_dist.name());
             return;
         }
+        println!("{:?} {:#?}", "-".repeat(indent), *installed_dist.name());
+        visited.insert(installed_dist.name().to_string());
         for required in installed_dist.metadata().unwrap().requires_dist {
-            println!("required: {:#?}", required);
+            if package_index.get(&required.name).is_none() {
+                continue;
+            }
             visit(
                 g[*package_index.get(&required.name).unwrap()],
                 visited,
                 g,
                 package_index,
+                indent + 1,
             );
         }
     }
     // print the dependencies
     for n in v {
-        visit(g[n], &visited, &g, &package_index);
-        println!("n: {:#?}", g[n].name());
+        visit(g[n], &mut visited, &g, &package_index, 1);
     }
 
     Ok(ExitStatus::Success)
