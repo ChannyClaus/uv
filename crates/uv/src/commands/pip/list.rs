@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use anyhow::Result;
@@ -75,11 +76,37 @@ pub(crate) fn pip_list(
             }
         }
     }
+
     let v = toposort(&g, None).unwrap();
     println!("v: {:#?}", v);
+
+    let visited: HashSet<PackageName> = HashSet::new();
+    pub fn visit(
+        installed_dist: &&InstalledDist,
+        visited: &HashSet<PackageName>,
+        g: &petgraph::prelude::Graph<&&InstalledDist, ()>,
+        package_index: &HashMap<&PackageName, petgraph::prelude::NodeIndex>,
+    ) {
+        if visited.contains(installed_dist.name()) {
+            println!("visited already: {:#?}", installed_dist.name());
+            return;
+        }
+        for required in installed_dist.metadata().unwrap().requires_dist {
+            println!("required: {:#?}", required);
+            visit(
+                g[*package_index.get(&required.name).unwrap()],
+                visited,
+                g,
+                package_index,
+            );
+        }
+    }
+    // print the dependencies
     for n in v {
+        visit(g[n], &visited, &g, &package_index);
         println!("n: {:#?}", g[n].name());
     }
+
     Ok(ExitStatus::Success)
 
     // match format {
