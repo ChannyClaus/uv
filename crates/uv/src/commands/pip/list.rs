@@ -70,7 +70,7 @@ pub(crate) fn pip_list(
             g.add_node(Requirement {
                 name: result.name().clone(),
                 extras: vec![],
-                version_or_url: result.version_or_url(),
+                version_or_url: None,
                 marker: None,
                 origin: None,
             }),
