@@ -104,6 +104,57 @@ fn single_package() {
 }
 
 #[test]
+fn nested_dependencies() {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt
+        .write_str("scikit-learn==1.4.1.post1")
+        .unwrap();
+
+    uv_snapshot!(install_command(&context)
+        .arg("-r")
+        .arg("requirements.txt")
+        .arg("--strict"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 5 packages in [TIME]
+    Downloaded 5 packages in [TIME]
+    Installed 5 packages in [TIME]
+     + joblib==1.3.2
+     + numpy==1.26.4
+     + scikit-learn==1.4.1.post1
+     + scipy==1.12.0
+     + threadpoolctl==3.4.0
+    "###
+    );
+
+    uv_snapshot!(context.filters(), Command::new(get_bin())
+        .arg("pip")
+        .arg("tree")
+        .arg("--cache-dir")
+        .arg(context.cache_dir.path())
+        .env("VIRTUAL_ENV", context.venv.as_os_str())
+        .env("UV_NO_WRAP", "1")
+        .current_dir(&context.temp_dir), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+    scikit-learn v1.4.1.post1
+    └── numpy v1.26.4
+    └── scipy v1.12.0
+        └── threadpoolctl v3.4.0
+    └── joblib v1.3.2
+
+    ----- stderr -----
+    "###
+    );
+}
+
+#[test]
 fn edited_dependency() {
     let context = TestContext::new("3.12");
 
