@@ -93,11 +93,17 @@ pub(crate) fn pip_list(
             // println!("visited already: {:#?}", installed_dist.name());
             return;
         }
-        println!(
-            "{:?} {:#?}",
-            "-".repeat(indent),
-            (*installed_dist.name()).to_string()
-        );
+        let mut line = String::new();
+        if (indent > 0) {
+            line.push_str("└─");
+            line.push_str("──".repeat(indent - 1).as_str());
+            line.push_str(" ");
+        }
+        line.push_str((*installed_dist.name()).to_string().as_str());
+        line.push_str(" v");
+        line.push_str((*installed_dist.version()).to_string().as_str());
+
+        println!("{line}");
         visited.insert(installed_dist.name().to_string());
         for required in installed_dist.metadata().unwrap().requires_dist {
             if package_index.get(&required.name).is_none() {
@@ -114,7 +120,7 @@ pub(crate) fn pip_list(
     }
     // print the dependencies
     for n in v {
-        visit(g[n], &mut visited, &g, &package_index, 1);
+        visit(g[n], &mut visited, &g, &package_index, 0);
     }
 
     Ok(ExitStatus::Success)
