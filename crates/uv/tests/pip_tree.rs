@@ -205,8 +205,12 @@ fn multiple_packages() {
     "###
     );
 
+    let mut filters = context.filters();
+    if cfg!(windows) {
+        filters.push(("└── colorama v0.4.6\n", ""));
+    }
     context.assert_command("import requests").success();
-    uv_snapshot!(context.filters(), Command::new(get_bin())
+    uv_snapshot!(filters, Command::new(get_bin())
         .arg("pip")
         .arg("tree")
         .arg("--cache-dir")
