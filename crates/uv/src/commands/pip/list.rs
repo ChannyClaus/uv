@@ -93,7 +93,11 @@ pub(crate) fn pip_list(
             // println!("visited already: {:#?}", installed_dist.name());
             return;
         }
-        println!("{:?} {:#?}", "-".repeat(indent), *installed_dist.name());
+        println!(
+            "{:?} {:#?}",
+            "-".repeat(indent),
+            (*installed_dist.name()).to_string()
+        );
         visited.insert(installed_dist.name().to_string());
         for required in installed_dist.metadata().unwrap().requires_dist {
             if package_index.get(&required.name).is_none() {
