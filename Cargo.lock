@@ -4495,6 +4495,7 @@ dependencies = [
  "mimalloc",
  "owo-colors",
  "pep508_rs",
+ "petgraph",
  "platform-tags",
  "predicates",
  "pypi-types",
