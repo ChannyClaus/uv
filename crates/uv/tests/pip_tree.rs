@@ -284,7 +284,7 @@ fn multiple_packages() {
     );
 }
 
-// both `requests` and `fiona` depend on `certifi`.
+// both `docker` and `boto3` depend on `urllib3`.
 #[test]
 fn multiple_packages_shared_descendant() {
     let context = TestContext::new("3.12");
@@ -293,8 +293,8 @@ fn multiple_packages_shared_descendant() {
     requirements_txt
         .write_str(
             r"
-        dask
-        pandas
+        docker==7.0.0
+        boto3==1.34.69
     ",
         )
         .unwrap();
@@ -308,24 +308,22 @@ fn multiple_packages_shared_descendant() {
     ----- stdout -----
 
     ----- stderr -----
-    Resolved 15 packages in [TIME]
-    Downloaded 15 packages in [TIME]
-    Installed 15 packages in [TIME]
-     + click==8.1.7
-     + cloudpickle==3.0.0
-     + dask==2024.3.1
-     + fsspec==2024.3.1
-     + locket==1.0.0
-     + numpy==1.26.4
+    Resolved 13 packages in [TIME]
+    Downloaded 13 packages in [TIME]
+    Installed 13 packages in [TIME]
+     + boto3==1.34.69
+     + botocore==1.34.69
+     + certifi==2024.2.2
+     + charset-normalizer==3.3.2
+     + docker==7.0.0
+     + idna==3.6
+     + jmespath==1.0.1
      + packaging==24.0
-     + pandas==2.2.1
-     + partd==1.4.1
      + python-dateutil==2.9.0.post0
-     + pytz==2024.1
-     + pyyaml==6.0.1
+     + requests==2.31.0
+     + s3transfer==0.10.1
      + six==1.16.0
-     + toolz==0.12.1
-     + tzdata==2024.1
+     + urllib3==2.2.1
 
     "###
     );
@@ -341,21 +339,19 @@ fn multiple_packages_shared_descendant() {
     success: true
     exit_code: 0
     ----- stdout -----
-    dask v2024.3.1
-    └── click v8.1.7
-    └── cloudpickle v3.0.0
-    └── fsspec v2024.3.1
+    boto3 v1.34.69
+    └── botocore v1.34.69
+        └── jmespath v1.0.1
+        └── python-dateutil v2.9.0.post0
+            └── six v1.16.0
+        └── urllib3 v2.2.1
+    └── s3transfer v0.10.1
+    docker v7.0.0
     └── packaging v24.0
-    └── partd v1.4.1
-        └── locket v1.0.0
-        └── toolz v0.12.1
-        └── numpy v1.26.4
-        └── pandas v2.2.1
-            └── python-dateutil v2.9.0.post0
-                └── six v1.16.0
-            └── pytz v2024.1
-            └── tzdata v2024.1
-    └── pyyaml v6.0.1
+    └── requests v2.31.0
+        └── charset-normalizer v3.3.2
+        └── idna v3.6
+        └── certifi v2024.2.2
 
     ----- stderr -----
     "###
