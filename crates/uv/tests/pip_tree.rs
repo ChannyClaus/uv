@@ -293,8 +293,8 @@ fn multiple_packages_shared_descendant() {
     requirements_txt
         .write_str(
             r"
-        flask==3.0.2
-        fiona==1.9.6
+        dask
+        pandas
     ",
         )
         .unwrap();
@@ -308,22 +308,24 @@ fn multiple_packages_shared_descendant() {
     ----- stdout -----
 
     ----- stderr -----
-    Resolved 13 packages in [TIME]
-    Downloaded 13 packages in [TIME]
-    Installed 13 packages in [TIME]
-     + attrs==23.2.0
-     + blinker==1.7.0
-     + certifi==2024.2.2
+    Resolved 15 packages in [TIME]
+    Downloaded 15 packages in [TIME]
+    Installed 15 packages in [TIME]
      + click==8.1.7
-     + click-plugins==1.1.1
-     + cligj==0.7.2
-     + fiona==1.9.6
-     + flask==3.0.2
-     + itsdangerous==2.1.2
-     + jinja2==3.1.3
-     + markupsafe==2.1.5
+     + cloudpickle==3.0.0
+     + dask==2024.3.1
+     + fsspec==2024.3.1
+     + locket==1.0.0
+     + numpy==1.26.4
+     + packaging==24.0
+     + pandas==2.2.1
+     + partd==1.4.1
+     + python-dateutil==2.9.0.post0
+     + pytz==2024.1
+     + pyyaml==6.0.1
      + six==1.16.0
-     + werkzeug==3.0.1
+     + toolz==0.12.1
+     + tzdata==2024.1
 
     "###
     );
@@ -339,19 +341,21 @@ fn multiple_packages_shared_descendant() {
     success: true
     exit_code: 0
     ----- stdout -----
-    flask v3.0.2
-    └── werkzeug v3.0.1
-        └── markupsafe v2.1.5
-    └── jinja2 v3.1.3
-    └── itsdangerous v2.1.2
+    dask v2024.3.1
     └── click v8.1.7
-    └── blinker v1.7.0
-    fiona v1.9.6
-    └── attrs v23.2.0
-    └── certifi v2024.2.2
-    └── click-plugins v1.1.1
-    └── cligj v0.7.2
-    └── six v1.16.0
+    └── cloudpickle v3.0.0
+    └── fsspec v2024.3.1
+    └── packaging v24.0
+    └── partd v1.4.1
+        └── locket v1.0.0
+        └── toolz v0.12.1
+        └── numpy v1.26.4
+        └── pandas v2.2.1
+            └── python-dateutil v2.9.0.post0
+                └── six v1.16.0
+            └── pytz v2024.1
+            └── tzdata v2024.1
+    └── pyyaml v6.0.1
 
     ----- stderr -----
     "###
