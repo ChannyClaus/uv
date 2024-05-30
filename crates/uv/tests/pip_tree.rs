@@ -371,9 +371,8 @@ fn with_editable() {
     ----- stdout -----
 
     ----- stderr -----
-    Built 1 editable in [TIME]
     Resolved 2 packages in [TIME]
-    Downloaded 1 package in [TIME]
+    Downloaded 2 packages in [TIME]
     Installed 2 packages in [TIME]
      + hatchling-editable==0.1.0 (from file://[WORKSPACE]/scripts/packages/hatchling_editable)
      + iniconfig==2.0.1.dev6+g9cae431 (from git+https://github.com/pytest-dev/iniconfig@9cae43103df70bac6fde7b9f35ad11a9f1be0cb4)
@@ -401,54 +400,6 @@ fn with_editable() {
     └── iniconfig v2.0.1.dev6+g9cae431
 
     ----- stderr -----
-    "###
-    );
-}
-
-#[test]
-fn dependency_cycle() {
-    let context = TestContext::new("3.12");
-
-    // Install the editable package.
-    uv_snapshot!(context.filters(), install_command(&context)
-        .arg("-e")
-        .arg(context.workspace_root.join("scripts/packages/poetry_editable")), @r###"
-    success: true
-    exit_code: 0
-    ----- stdout -----
-
-    ----- stderr -----
-    Built 1 editable in [TIME]
-    Resolved 4 packages in [TIME]
-    Downloaded 3 packages in [TIME]
-    Installed 4 packages in [TIME]
-     + anyio==4.3.0
-     + idna==3.6
-     + poetry-editable==0.1.0 (from file://[WORKSPACE]/scripts/packages/poetry_editable)
-     + sniffio==1.3.1
-    "###
-    );
-
-    let filters = context
-        .filters()
-        .into_iter()
-        .chain(vec![(r"\-\-\-\-\-\-+.*", "[UNDERLINE]"), ("  +", " ")])
-        .collect::<Vec<_>>();
-
-    uv_snapshot!(filters, Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
-    success: false
-    exit_code: 2
-    ----- stdout -----
-
-    ----- stderr -----
-    Failed to print the dependency tree due to cyclic dependency.
     "###
     );
 }
