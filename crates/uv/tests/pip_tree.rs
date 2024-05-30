@@ -284,6 +284,80 @@ fn multiple_packages() {
     );
 }
 
+// both `requests` and `fiona` depend on `certifi`.
+#[test]
+fn multiple_packages_shared_descendant() {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt
+        .write_str(
+            r"
+        flask==3.0.2
+        fiona==1.9.6
+    ",
+        )
+        .unwrap();
+
+    uv_snapshot!(install_command(&context)
+        .arg("-r")
+        .arg("requirements.txt")
+        .arg("--strict"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 13 packages in [TIME]
+    Downloaded 13 packages in [TIME]
+    Installed 13 packages in [TIME]
+     + attrs==23.2.0
+     + blinker==1.7.0
+     + certifi==2024.2.2
+     + click==8.1.7
+     + click-plugins==1.1.1
+     + cligj==0.7.2
+     + fiona==1.9.6
+     + flask==3.0.2
+     + itsdangerous==2.1.2
+     + jinja2==3.1.3
+     + markupsafe==2.1.5
+     + six==1.16.0
+     + werkzeug==3.0.1
+
+    "###
+    );
+
+    uv_snapshot!(context.filters(), Command::new(get_bin())
+        .arg("pip")
+        .arg("tree")
+        .arg("--cache-dir")
+        .arg(context.cache_dir.path())
+        .env("VIRTUAL_ENV", context.venv.as_os_str())
+        .env("UV_NO_WRAP", "1")
+        .current_dir(&context.temp_dir), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+    flask v3.0.2
+    └── werkzeug v3.0.1
+        └── markupsafe v2.1.5
+    └── jinja2 v3.1.3
+    └── itsdangerous v2.1.2
+    └── click v8.1.7
+    └── blinker v1.7.0
+    fiona v1.9.6
+    └── attrs v23.2.0
+    └── certifi v2024.2.2
+    └── click-plugins v1.1.1
+    └── cligj v0.7.2
+    └── six v1.16.0
+
+    ----- stderr -----
+    "###
+    );
+}
+
 #[test]
 fn with_editable() {
     let context = TestContext::new("3.12");
