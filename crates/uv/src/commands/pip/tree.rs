@@ -97,7 +97,17 @@ impl<'a> DisplayDependencyGraph<'a> {
             package_index.insert(site_package.name(), graph.add_node(site_package));
         }
         for site_package in site_packages.iter() {
-            for required in site_package.metadata().unwrap().requires_dist {
+            let metadata = site_package.metadata().unwrap();
+            for required in metadata.requires_dist {
+                // Skip the dependency if it is required by an extra.
+                if required.marker.is_some()
+                    && required
+                        .marker
+                        .unwrap()
+                        .evaluate_optional_environment(None, &metadata.provides_extras[..])
+                {
+                    continue;
+                }
                 if let Some(req) = package_index.get(&required.name) {
                     graph.add_edge(*req, package_index[&site_package.name()], ());
                 }
