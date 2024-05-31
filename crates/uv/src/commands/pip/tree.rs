@@ -134,7 +134,6 @@ impl<'a> DisplayDependencyGraph<'a> {
 
     // Visit and print the given installed distribution and those required by it.
     fn visit(&self, installed_dist: &InstalledDist, indent: usize, visited: &mut HashSet<String>) {
-        // println!("HERE: {:?}", installed_dist.name());
         let is_visited = visited.contains(&installed_dist.name().to_string());
         let line = render_line(installed_dist, indent, is_visited);
         writeln!(self.printer.stdout(), "{line}").unwrap();
