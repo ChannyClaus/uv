@@ -155,6 +155,8 @@ impl<'a> DisplayDependencyGraph<'a> {
     // The starting nodes are the ones without incoming edges.
     fn render(&self) -> Result<(), anyhow::Error> {
         let mut visited: HashSet<String> = HashSet::new();
+        println!("graph: {:#?}", self.graph);
+        println!("self.required_packages: {:#?}", self.required_packages);
         match toposort(&self.graph, None) {
             Ok(sorted) => {
                 for node_index in sorted.iter().rev() {
