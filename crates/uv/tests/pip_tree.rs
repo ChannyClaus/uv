@@ -146,8 +146,9 @@ fn nested_dependencies() {
     scikit-learn v1.4.1.post1
     └── numpy v1.26.4
     └── scipy v1.12.0
-        └── threadpoolctl v3.4.0
+        └── numpy v1.26.4 (*)
     └── joblib v1.3.2
+    └── threadpoolctl v3.4.0
 
     ----- stderr -----
     "###
@@ -272,12 +273,12 @@ fn multiple_packages() {
     success: true
     exit_code: 0
     ----- stdout -----
+    click v8.1.7
     requests v2.31.0
     └── charset-normalizer v3.3.2
     └── idna v3.6
     └── urllib3 v2.2.1
     └── certifi v2024.2.2
-    click v8.1.7
 
     ----- stderr -----
     "###
@@ -293,7 +294,7 @@ fn multiple_packages_shared_descendant() {
     requirements_txt
         .write_str(
             r"
-        splinter
+        pendulum
         boto3==1.34.69
     ",
         )
@@ -308,16 +309,18 @@ fn multiple_packages_shared_descendant() {
     ----- stdout -----
 
     ----- stderr -----
-    Resolved 8 packages in [TIME]
-    Downloaded 8 packages in [TIME]
-    Installed 8 packages in [TIME]
+    Resolved 10 packages in [TIME]
+    Downloaded 10 packages in [TIME]
+    Installed 10 packages in [TIME]
      + boto3==1.34.69
      + botocore==1.34.69
      + jmespath==1.0.1
+     + pendulum==3.0.0
      + python-dateutil==2.9.0.post0
      + s3transfer==0.10.1
      + six==1.16.0
-     + splinter==0.21.0
+     + time-machine==2.14.1
+     + tzdata==2024.1
      + urllib3==2.2.1
 
     "###
@@ -334,7 +337,20 @@ fn multiple_packages_shared_descendant() {
     success: true
     exit_code: 0
     ----- stdout -----
-
+    boto3 v1.34.69
+    └── botocore v1.34.69
+        └── jmespath v1.0.1
+        └── python-dateutil v2.9.0.post0
+            └── six v1.16.0
+    └── jmespath v1.0.1 (*)
+    └── s3transfer v0.10.1
+        └── botocore v1.34.69 (*)
+    pendulum v3.0.0
+    └── python-dateutil v2.9.0.post0 (*)
+    └── tzdata v2024.1
+    time-machine v2.14.1
+    └── python-dateutil v2.9.0.post0 (*)
+    urllib3 v2.2.1
 
     ----- stderr -----
     "###
