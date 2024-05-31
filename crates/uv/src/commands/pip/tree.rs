@@ -3,7 +3,6 @@ use std::fmt::Write;
 
 use anyhow::Result;
 use owo_colors::OwoColorize;
-use petgraph::algo::toposort;
 use tracing::debug;
 
 use distribution_types::{Diagnostic, InstalledDist, Name};
@@ -84,27 +83,20 @@ fn render_line(installed_dist: &InstalledDist, indent: usize, is_visited: bool) 
 }
 #[derive(Debug)]
 struct DisplayDependencyGraph<'a> {
-    // Dependency graph of installed distributions.
-    graph: petgraph::prelude::Graph<&'a InstalledDist, ()>,
-    // Set of packages that are depended on by some installed package.
-    // It is used to determine the root nodes of the dependency tree,
-    // where the root nodes are defined as nodes without incoming edges
-    // (i.e. they are the top-level package).
-    required_packages: HashSet<PackageName>,
-    // Map from package name to node index in the graph.
-    package_index: HashMap<&'a PackageName, petgraph::prelude::NodeIndex>,
+    // Map from package name to the installed distribution.
+    package_index: HashMap<&'a PackageName, &'a InstalledDist>,
+    site_packages: &'a SitePackages,
+    non_root_packages: HashSet<PackageName>,
     printer: Printer,
 }
 
 impl<'a> DisplayDependencyGraph<'a> {
     /// Create a new [`DisplayDependencyGraph`] for the given graph.
     fn new(site_packages: &'a SitePackages, printer: Printer) -> DisplayDependencyGraph<'a> {
-        let mut graph = petgraph::prelude::Graph::<&InstalledDist, ()>::new();
-        let mut required_packages = HashSet::new();
         let mut package_index = HashMap::new();
-
+        let mut non_root_packages = HashSet::new();
         for site_package in site_packages.iter() {
-            package_index.insert(site_package.name(), graph.add_node(site_package));
+            package_index.insert(site_package.name(), site_package);
         }
         for site_package in site_packages.iter() {
             let metadata = site_package.metadata().unwrap();
@@ -118,16 +110,13 @@ impl<'a> DisplayDependencyGraph<'a> {
                 {
                     continue;
                 }
-                required_packages.insert(required.name.clone());
-                if let Some(req) = package_index.get(&required.name) {
-                    graph.add_edge(*req, package_index[&site_package.name()], ());
-                }
+                non_root_packages.insert(required.name.clone());
             }
         }
         Self {
-            graph,
-            required_packages,
             package_index,
+            site_packages,
+            non_root_packages,
             printer,
         }
     }
@@ -142,11 +131,17 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
         visited.insert(installed_dist.name().to_string());
         for required in installed_dist.metadata().unwrap().requires_dist {
-            match self.package_index.get(&required.name) {
-                Some(index) => {
-                    self.visit(self.graph[*index], indent + 1, visited);
-                }
-                None => continue,
+            // TODO: de-duplicate.
+            if required.marker.is_some()
+                && required.marker.unwrap().evaluate_optional_environment(
+                    None,
+                    &installed_dist.metadata().unwrap().provides_extras[..],
+                )
+            {
+                continue;
+            }
+            if self.package_index.get(&required.name).is_some() {
+                self.visit(self.package_index[&required.name], indent + 1, visited);
             }
         }
     }
@@ -155,23 +150,11 @@ impl<'a> DisplayDependencyGraph<'a> {
     // The starting nodes are the ones without incoming edges.
     fn render(&self) -> Result<(), anyhow::Error> {
         let mut visited: HashSet<String> = HashSet::new();
-        println!("graph: {:#?}", self.graph);
-        println!("self.required_packages: {:#?}", self.required_packages);
-        match toposort(&self.graph, None) {
-            Ok(sorted) => {
-                for node_index in sorted.iter().rev() {
-                    let dist = self.graph[*node_index];
-                    if !self.required_packages.contains(dist.name()) {
-                        self.visit(dist, 0, &mut visited);
-                    }
-                }
-                Ok(())
+        for site_package in self.site_packages.iter() {
+            if !self.non_root_packages.contains(site_package.name()) {
+                self.visit(site_package, 0, &mut visited);
             }
-            // TODO: Improve the error handling for cyclic dependency;
-            //       offending packages' names should be printed to stderr.
-            Err(_) => Err(anyhow::anyhow!(
-                "Failed to print the dependency tree due to cyclic dependency."
-            )),
         }
+        Ok(())
     }
 }
