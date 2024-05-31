@@ -66,7 +66,7 @@ pub(crate) fn pip_tree(
 }
 
 // Render the line for the given installed distribution in the dependency tree.
-fn render_line(installed_dist: &InstalledDist, indent: usize) -> String {
+fn render_line(installed_dist: &InstalledDist, indent: usize, is_visited: bool) -> String {
     let mut line = String::new();
     if indent > 0 {
         line.push_str("    ".repeat(indent - 1).as_str());
@@ -76,12 +76,21 @@ fn render_line(installed_dist: &InstalledDist, indent: usize) -> String {
     line.push_str((*installed_dist.name()).to_string().as_str());
     line.push_str(" v");
     line.push_str((*installed_dist.version()).to_string().as_str());
+
+    if is_visited {
+        line.push_str(" (*)");
+    }
     line
 }
 #[derive(Debug)]
 struct DisplayDependencyGraph<'a> {
     // Dependency graph of installed distributions.
     graph: petgraph::prelude::Graph<&'a InstalledDist, ()>,
+    // Set of packages that are depended on by some installed package.
+    // It is used to determine the root nodes of the dependency tree,
+    // where the root nodes are defined as nodes without incoming edges
+    // (i.e. they are the top-level package).
+    required_packages: HashSet<PackageName>,
     // Map from package name to node index in the graph.
     package_index: HashMap<&'a PackageName, petgraph::prelude::NodeIndex>,
     printer: Printer,
@@ -91,6 +100,7 @@ impl<'a> DisplayDependencyGraph<'a> {
     /// Create a new [`DisplayDependencyGraph`] for the given graph.
     fn new(site_packages: &'a SitePackages, printer: Printer) -> DisplayDependencyGraph<'a> {
         let mut graph = petgraph::prelude::Graph::<&InstalledDist, ()>::new();
+        let mut required_packages = HashSet::new();
         let mut package_index = HashMap::new();
 
         for site_package in site_packages.iter() {
@@ -108,6 +118,7 @@ impl<'a> DisplayDependencyGraph<'a> {
                 {
                     continue;
                 }
+                required_packages.insert(required.name.clone());
                 if let Some(req) = package_index.get(&required.name) {
                     graph.add_edge(*req, package_index[&site_package.name()], ());
                 }
@@ -115,6 +126,7 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
         Self {
             graph,
+            required_packages,
             package_index,
             printer,
         }
@@ -122,11 +134,13 @@ impl<'a> DisplayDependencyGraph<'a> {
 
     // Visit and print the given installed distribution and those required by it.
     fn visit(&self, installed_dist: &InstalledDist, indent: usize, visited: &mut HashSet<String>) {
-        if visited.contains(&installed_dist.name().to_string()) {
+        // println!("HERE: {:?}", installed_dist.name());
+        let is_visited = visited.contains(&installed_dist.name().to_string());
+        let line = render_line(installed_dist, indent, is_visited);
+        writeln!(self.printer.stdout(), "{line}").unwrap();
+        if is_visited {
             return;
         }
-        let line = render_line(installed_dist, indent);
-        writeln!(self.printer.stdout(), "{line}").unwrap();
         visited.insert(installed_dist.name().to_string());
         for required in installed_dist.metadata().unwrap().requires_dist {
             match self.package_index.get(&required.name) {
@@ -138,13 +152,17 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
     }
 
-    // Recursively visit the topologically sorted list of installed distributions.
+    // Recursively visit the nodes to render the tree.
+    // The starting nodes are the ones without incoming edges.
     fn render(&self) -> Result<(), anyhow::Error> {
         let mut visited: HashSet<String> = HashSet::new();
         match toposort(&self.graph, None) {
             Ok(sorted) => {
                 for node_index in sorted.iter().rev() {
-                    self.visit(self.graph[*node_index], 0, &mut visited);
+                    let dist = self.graph[*node_index];
+                    if !self.required_packages.contains(dist.name()) {
+                        self.visit(dist, 0, &mut visited);
+                    }
                 }
                 Ok(())
             }

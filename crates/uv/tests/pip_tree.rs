@@ -284,7 +284,7 @@ fn multiple_packages() {
     );
 }
 
-// both `docker` and `boto3` depend on `urllib3`.
+// both `splinter` and `boto3` depend on `urllib3`.
 #[test]
 fn multiple_packages_shared_descendant() {
     let context = TestContext::new("3.12");
@@ -293,7 +293,7 @@ fn multiple_packages_shared_descendant() {
     requirements_txt
         .write_str(
             r"
-        docker==7.0.0
+        splinter
         boto3==1.34.69
     ",
         )
@@ -308,21 +308,16 @@ fn multiple_packages_shared_descendant() {
     ----- stdout -----
 
     ----- stderr -----
-    Resolved 13 packages in [TIME]
-    Downloaded 13 packages in [TIME]
-    Installed 13 packages in [TIME]
+    Resolved 8 packages in [TIME]
+    Downloaded 8 packages in [TIME]
+    Installed 8 packages in [TIME]
      + boto3==1.34.69
      + botocore==1.34.69
-     + certifi==2024.2.2
-     + charset-normalizer==3.3.2
-     + docker==7.0.0
-     + idna==3.6
      + jmespath==1.0.1
-     + packaging==24.0
      + python-dateutil==2.9.0.post0
-     + requests==2.31.0
      + s3transfer==0.10.1
      + six==1.16.0
+     + splinter==0.21.0
      + urllib3==2.2.1
 
     "###
@@ -339,19 +334,7 @@ fn multiple_packages_shared_descendant() {
     success: true
     exit_code: 0
     ----- stdout -----
-    boto3 v1.34.69
-    └── botocore v1.34.69
-        └── jmespath v1.0.1
-        └── python-dateutil v2.9.0.post0
-            └── six v1.16.0
-        └── urllib3 v2.2.1
-    └── s3transfer v0.10.1
-    docker v7.0.0
-    └── packaging v24.0
-    └── requests v2.31.0
-        └── charset-normalizer v3.3.2
-        └── idna v3.6
-        └── certifi v2024.2.2
+
 
     ----- stderr -----
     "###
