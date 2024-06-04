@@ -27,6 +27,7 @@ use uv_configuration::{KeyringProviderType, TargetTriple};
 use uv_dispatch::BuildDispatch;
 use uv_distribution::DistributionDatabase;
 use uv_fs::Simplified;
+use uv_git::GitResolver;
 use uv_interpreter::{
     find_best_interpreter, find_interpreter, InterpreterRequest, PythonEnvironment, SystemPython,
     VersionRequest,
@@ -112,7 +113,7 @@ pub(crate) async fn pip_compile(
 
     // Read all requirements from the provided sources.
     let RequirementsSpecification {
-        project,
+        mut project,
         requirements,
         constraints,
         overrides,
@@ -128,10 +129,7 @@ pub(crate) async fn pip_compile(
         requirements,
         constraints,
         overrides,
-        None,
-        &extras,
         &client_builder,
-        preview,
     )
     .await?;
 
@@ -289,6 +287,7 @@ pub(crate) async fn pip_compile(
 
     // Read the lockfile, if present.
     let preferences = read_requirements_txt(output_file, &upgrade).await?;
+    let git = GitResolver::default();
 
     // Resolve the flat indexes from `--find-links`.
     let flat_index = {
@@ -319,6 +318,7 @@ pub(crate) async fn pip_compile(
         &index_locations,
         &flat_index,
         &source_index,
+        &git,
         &in_flight,
         setup_py,
         &config_settings,
@@ -327,6 +327,7 @@ pub(crate) async fn pip_compile(
         &no_build,
         &NoBinary::None,
         concurrency,
+        preview,
     )
     .with_options(OptionsBuilder::new().exclude_newer(exclude_newer).build());
 
@@ -337,7 +338,7 @@ pub(crate) async fn pip_compile(
             requirements,
             &hasher,
             &top_level_index,
-            DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads),
+            DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
         )
         .with_reporter(ResolverReporter::from(printer))
         .resolve()
@@ -345,17 +346,52 @@ pub(crate) async fn pip_compile(
 
         // Resolve any source trees into requirements.
         if !source_trees.is_empty() {
+            let resolutions = SourceTreeResolver::new(
+                source_trees,
+                &extras,
+                &hasher,
+                &top_level_index,
+                DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
+            )
+            .with_reporter(ResolverReporter::from(printer))
+            .resolve()
+            .await?;
+
+            // If we resolved a single project, use it for the project name.
+            project = project.or_else(|| {
+                if let [resolution] = &resolutions[..] {
+                    Some(resolution.project.clone())
+                } else {
+                    None
+                }
+            });
+
+            // If any of the extras were unused, surface a warning.
+            if let ExtrasSpecification::Some(extras) = extras {
+                let mut unused_extras = extras
+                    .iter()
+                    .filter(|extra| {
+                        !resolutions
+                            .iter()
+                            .any(|resolution| resolution.extras.contains(extra))
+                    })
+                    .collect::<Vec<_>>();
+                if !unused_extras.is_empty() {
+                    unused_extras.sort_unstable();
+                    unused_extras.dedup();
+                    let s = if unused_extras.len() == 1 { "" } else { "s" };
+                    return Err(anyhow!(
+                        "Requested extra{s} not found: {}",
+                        unused_extras.iter().join(", ")
+                    ));
+                }
+            }
+
+            // Extend the requirements with the resolved source trees.
             requirements.extend(
-                SourceTreeResolver::new(
-                    source_trees,
-                    &extras,
-                    &hasher,
-                    &top_level_index,
-                    DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads),
-                )
-                .with_reporter(ResolverReporter::from(printer))
-                .resolve()
-                .await?,
+                resolutions
+                    .into_iter()
+                    .flat_map(|resolution| resolution.requirements),
             );
         }
 
@@ -367,7 +403,7 @@ pub(crate) async fn pip_compile(
         overrides,
         &hasher,
         &top_level_index,
-        DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads),
+        DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
     )
     .with_reporter(ResolverReporter::from(printer))
     .resolve()
@@ -425,7 +461,7 @@ pub(crate) async fn pip_compile(
                 &overrides,
                 &hasher,
                 &top_level_index,
-                DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads),
+                DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
             )
             .with_reporter(ResolverReporter::from(printer))
             .resolve(marker_filter)
@@ -466,7 +502,7 @@ pub(crate) async fn pip_compile(
         &hasher,
         &build_dispatch,
         EmptyInstalledPackages,
-        DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads),
+        DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
     )?
     .with_reporter(ResolverReporter::from(printer));
 

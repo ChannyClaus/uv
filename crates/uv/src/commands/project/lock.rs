@@ -10,9 +10,10 @@ use uv_configuration::{
     SetupPyStrategy, Upgrade,
 };
 use uv_dispatch::BuildDispatch;
+use uv_distribution::ProjectWorkspace;
+use uv_git::GitResolver;
 use uv_interpreter::PythonEnvironment;
-use uv_requirements::upgrade::read_lockfile;
-use uv_requirements::ProjectWorkspace;
+use uv_requirements::upgrade::{read_lockfile, LockedRequirements};
 use uv_resolver::{ExcludeNewer, FlatIndex, InMemoryIndex, Lock, OptionsBuilder};
 use uv_types::{BuildIsolation, EmptyInstalledPackages, HashStrategy, InFlight};
 use uv_warnings::warn_user;
@@ -35,13 +36,23 @@ pub(crate) async fn lock(
     }
 
     // Find the project requirements.
-    let project = ProjectWorkspace::discover(std::env::current_dir()?).await?;
+    let project = ProjectWorkspace::discover(std::env::current_dir()?, None).await?;
 
     // Discover or create the virtual environment.
     let venv = project::init_environment(&project, preview, cache, printer)?;
 
     // Perform the lock operation.
-    match do_lock(&project, &venv, upgrade, exclude_newer, cache, printer).await {
+    match do_lock(
+        &project,
+        &venv,
+        upgrade,
+        exclude_newer,
+        preview,
+        cache,
+        printer,
+    )
+    .await
+    {
         Ok(_) => Ok(ExitStatus::Success),
         Err(ProjectError::Operation(pip::operations::Error::Resolve(
             uv_resolver::ResolveError::NoSolution(err),
@@ -61,6 +72,7 @@ pub(super) async fn do_lock(
     venv: &PythonEnvironment,
     upgrade: Upgrade,
     exclude_newer: Option<ExcludeNewer>,
+    preview: PreviewMode,
     cache: &Cache,
     printer: Printer,
 ) -> Result<Lock, ProjectError> {
@@ -106,7 +118,10 @@ pub(super) async fn do_lock(
     let options = OptionsBuilder::new().exclude_newer(exclude_newer).build();
 
     // If an existing lockfile exists, build up a set of preferences.
-    let preferences = read_lockfile(project, &upgrade).await?;
+    let LockedRequirements { preferences, git } = read_lockfile(project, &upgrade).await?;
+
+    // Create the Git resolver.
+    let git = GitResolver::from_refs(git);
 
     // Create a build dispatch.
     let build_dispatch = BuildDispatch::new(
@@ -116,6 +131,7 @@ pub(super) async fn do_lock(
         &index_locations,
         &flat_index,
         &index,
+        &git,
         &in_flight,
         setup_py,
         &config_settings,
@@ -124,6 +140,7 @@ pub(super) async fn do_lock(
         &no_build,
         &no_binary,
         concurrency,
+        preview,
     );
 
     // Resolve the requirements.
@@ -149,6 +166,7 @@ pub(super) async fn do_lock(
         concurrency,
         options,
         printer,
+        preview,
     )
     .await?;
 

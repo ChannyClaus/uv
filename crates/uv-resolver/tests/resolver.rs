@@ -10,16 +10,18 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 
-use distribution_types::{CachedDist, IndexLocations, Requirement, Resolution, SourceDist};
+use distribution_types::{CachedDist, IndexLocations, Resolution, SourceDist};
 use pep440_rs::Version;
 use pep508_rs::{MarkerEnvironment, MarkerEnvironmentBuilder};
 use platform_tags::{Arch, Os, Platform, Tags};
+use pypi_types::Requirement;
 use uv_cache::Cache;
 use uv_client::RegistryClientBuilder;
 use uv_configuration::{
     BuildKind, Concurrency, Constraints, NoBinary, NoBuild, Overrides, PreviewMode, SetupPyStrategy,
 };
 use uv_distribution::DistributionDatabase;
+use uv_git::GitResolver;
 use uv_interpreter::{find_default_interpreter, Interpreter, PythonEnvironment};
 use uv_normalize::PackageName;
 use uv_resolver::{
@@ -44,6 +46,7 @@ struct DummyContext {
     cache: Cache,
     interpreter: Interpreter,
     index_locations: IndexLocations,
+    git: GitResolver,
 }
 
 impl DummyContext {
@@ -52,6 +55,7 @@ impl DummyContext {
             cache,
             interpreter,
             index_locations: IndexLocations::default(),
+            git: GitResolver::default(),
         }
     }
 }
@@ -61,6 +65,10 @@ impl BuildContext for DummyContext {
 
     fn cache(&self) -> &Cache {
         &self.cache
+    }
+
+    fn git(&self) -> &GitResolver {
+        &self.git
     }
 
     fn interpreter(&self) -> &Interpreter {
@@ -155,7 +163,12 @@ async fn resolve(
         &hashes,
         &build_context,
         installed_packages,
-        DistributionDatabase::new(&client, &build_context, concurrency.downloads),
+        DistributionDatabase::new(
+            &client,
+            &build_context,
+            concurrency.downloads,
+            PreviewMode::Disabled,
+        ),
     )?;
     Ok(resolver.resolve().await?)
 }

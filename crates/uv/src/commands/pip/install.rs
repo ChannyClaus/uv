@@ -20,6 +20,7 @@ use uv_configuration::{
 use uv_configuration::{KeyringProviderType, TargetTriple};
 use uv_dispatch::BuildDispatch;
 use uv_fs::Simplified;
+use uv_git::GitResolver;
 use uv_installer::{SatisfiesResult, SitePackages};
 use uv_interpreter::{PythonEnvironment, PythonVersion, SystemPython, Target};
 use uv_normalize::PackageName;
@@ -100,10 +101,8 @@ pub(crate) async fn pip_install(
         requirements,
         constraints,
         overrides,
-        None,
         extras,
         &client_builder,
-        preview,
     )
     .await?;
 
@@ -257,6 +256,7 @@ pub(crate) async fn pip_install(
 
     // When resolving, don't take any external preferences into account.
     let preferences = Vec::default();
+    let git = GitResolver::default();
 
     // Incorporate any index locations from the provided sources.
     let index_locations =
@@ -310,6 +310,7 @@ pub(crate) async fn pip_install(
         &index_locations,
         &flat_index,
         &index,
+        &git,
         &in_flight,
         setup_py,
         config_settings,
@@ -318,6 +319,7 @@ pub(crate) async fn pip_install(
         &no_build,
         &no_binary,
         concurrency,
+        preview,
     )
     .with_options(OptionsBuilder::new().exclude_newer(exclude_newer).build());
 
@@ -358,6 +360,7 @@ pub(crate) async fn pip_install(
             concurrency,
             options,
             printer,
+            preview,
         )
         .await
         {
@@ -387,6 +390,7 @@ pub(crate) async fn pip_install(
             &index_locations,
             &flat_index,
             &index,
+            &git,
             &in_flight,
             setup_py,
             config_settings,
@@ -395,6 +399,7 @@ pub(crate) async fn pip_install(
             &no_build,
             &no_binary,
             concurrency,
+            preview,
         )
         .with_options(OptionsBuilder::new().exclude_newer(exclude_newer).build())
     };
@@ -419,6 +424,7 @@ pub(crate) async fn pip_install(
         &venv,
         dry_run,
         printer,
+        preview,
     )
     .await?;
 

@@ -81,8 +81,7 @@ fn missing_requirements_txt() {
     ----- stdout -----
 
     ----- stderr -----
-    error: failed to read from file `requirements.txt`
-      Caused by: No such file or directory (os error 2)
+    error: File not found: `requirements.txt`
     "###
     );
 
@@ -124,8 +123,7 @@ fn missing_pyproject_toml() {
     ----- stdout -----
 
     ----- stderr -----
-    error: failed to read from file `pyproject.toml`
-      Caused by: No such file or directory (os error 2)
+    error: File not found: `pyproject.toml`
     "###
     );
 }
@@ -178,41 +176,6 @@ fn invalid_pyproject_toml_schema() -> Result<()> {
       | ^^^^^^^^^
     missing field `name`
 
-    "###
-    );
-
-    Ok(())
-}
-
-/// For user controlled pyproject.toml files, we enforce PEP 621.
-#[test]
-fn invalid_pyproject_toml_requirement_direct() -> Result<()> {
-    let context = TestContext::new("3.12");
-    let pyproject_toml = context.temp_dir.child("pyproject.toml");
-    pyproject_toml.write_str(
-        r#"[project]
-name = "project"
-dependencies = ["flask==1.0.x"]
-"#,
-    )?;
-
-    let filters = [("exit status", "exit code")]
-        .into_iter()
-        .chain(context.filters())
-        .collect::<Vec<_>>();
-
-    uv_snapshot!(filters, context.install()
-        .arg("-r")
-        .arg("pyproject.toml"), @r###"
-    success: false
-    exit_code: 2
-    ----- stdout -----
-
-    ----- stderr -----
-    error: Failed to parse: `pyproject.toml`
-      Caused by: after parsing '1.0', found '.x', which is not part of a valid version
-    flask==1.0.x
-         ^^^^^^^
     "###
     );
 
@@ -1075,6 +1038,161 @@ fn install_editable_incompatible_constraint_url() -> Result<()> {
     error: Requirements contain conflicting URLs for package `black`:
     - [WORKSPACE]/scripts/packages/black_editable
     - https://files.pythonhosted.org/packages/0f/89/294c9a6b6c75a08da55e9d05321d0707e9418735e3062b12ef0f54c33474/black-24.4.2-py3-none-any.whl
+    "###
+    );
+
+    Ok(())
+}
+
+#[test]
+fn install_editable_pep_508_requirements_txt() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt.write_str(&indoc::formatdoc! {r"
+        -e black[d] @ file://{workspace_root}/scripts/packages/black_editable
+        ",
+        workspace_root = context.workspace_root.simplified_display(),
+    })?;
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-r")
+        .arg("requirements.txt"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 8 packages in [TIME]
+    Downloaded 8 packages in [TIME]
+    Installed 8 packages in [TIME]
+     + aiohttp==3.9.3
+     + aiosignal==1.3.1
+     + attrs==23.2.0
+     + black==0.1.0 (from file://[WORKSPACE]/scripts/packages/black_editable)
+     + frozenlist==1.4.1
+     + idna==3.6
+     + multidict==6.0.5
+     + yarl==1.9.4
+    "###
+    );
+
+    Ok(())
+}
+
+#[test]
+fn install_editable_pep_508_cli() {
+    let context = TestContext::new("3.12");
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-e")
+        .arg(format!("black[d] @ file://{workspace_root}/scripts/packages/black_editable", workspace_root = context.workspace_root.simplified_display())), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 8 packages in [TIME]
+    Downloaded 8 packages in [TIME]
+    Installed 8 packages in [TIME]
+     + aiohttp==3.9.3
+     + aiosignal==1.3.1
+     + attrs==23.2.0
+     + black==0.1.0 (from file://[WORKSPACE]/scripts/packages/black_editable)
+     + frozenlist==1.4.1
+     + idna==3.6
+     + multidict==6.0.5
+     + yarl==1.9.4
+    "###
+    );
+}
+
+#[test]
+fn invalid_editable_no_version() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt.write_str("-e black")?;
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-r")
+        .arg("requirements.txt"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    error: Unsupported editable requirement in `requirements.txt`
+      Caused by: Editable `black` must refer to a local directory
+    "###
+    );
+
+    Ok(())
+}
+
+#[test]
+fn invalid_editable_no_url() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt.write_str("-e black==0.1.0")?;
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-r")
+        .arg("requirements.txt"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    error: Unsupported editable requirement in `requirements.txt`
+      Caused by: Editable `black` must refer to a local directory, not a versioned package
+    "###
+    );
+
+    Ok(())
+}
+
+#[test]
+fn invalid_editable_unnamed_https_url() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt.write_str("-e https://files.pythonhosted.org/packages/0f/89/294c9a6b6c75a08da55e9d05321d0707e9418735e3062b12ef0f54c33474/black-24.4.2-py3-none-any.whl")?;
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-r")
+        .arg("requirements.txt"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    error: Unsupported editable requirement in `requirements.txt`
+      Caused by: Editable must refer to a local directory, not an HTTPS URL: `https://files.pythonhosted.org/packages/0f/89/294c9a6b6c75a08da55e9d05321d0707e9418735e3062b12ef0f54c33474/black-24.4.2-py3-none-any.whl`
+    "###
+    );
+
+    Ok(())
+}
+
+#[test]
+fn invalid_editable_named_https_url() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let requirements_txt = context.temp_dir.child("requirements.txt");
+    requirements_txt.write_str("-e black @ https://files.pythonhosted.org/packages/0f/89/294c9a6b6c75a08da55e9d05321d0707e9418735e3062b12ef0f54c33474/black-24.4.2-py3-none-any.whl")?;
+
+    uv_snapshot!(context.filters(), context.install()
+        .arg("-r")
+        .arg("requirements.txt"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    error: Unsupported editable requirement in `requirements.txt`
+      Caused by: Editable `black` must refer to a local directory, not an HTTPS URL: `https://files.pythonhosted.org/packages/0f/89/294c9a6b6c75a08da55e9d05321d0707e9418735e3062b12ef0f54c33474/black-24.4.2-py3-none-any.whl`
     "###
     );
 
@@ -4980,7 +5098,8 @@ fn tool_uv_sources() -> Result<()> {
     ----- stdout -----
 
     ----- stderr -----
-    Audited 6 packages in [TIME]
+    Resolved 9 packages in [TIME]
+    Audited 9 packages in [TIME]
     "###
     );
     Ok(())
@@ -5013,8 +5132,7 @@ fn tool_uv_sources_is_in_preview() -> Result<()> {
     ----- stdout -----
 
     ----- stderr -----
-    error: Failed to parse: `pyproject.toml`
-      Caused by: Failed to parse entry for: `tqdm`
+    error: Failed to parse entry for: `tqdm`
       Caused by: `tool.uv.sources` is a preview feature; use `--preview` or set `UV_PREVIEW=1` to enable it
     "###
     );

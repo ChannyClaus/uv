@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use bench::criterion::black_box;
 use bench::criterion::{criterion_group, criterion_main, measurement::WallTime, Criterion};
-use distribution_types::Requirement;
+use pypi_types::Requirement;
 use uv_cache::Cache;
 use uv_client::RegistryClientBuilder;
 use uv_interpreter::PythonEnvironment;
@@ -80,9 +80,12 @@ mod resolver {
     use platform_tags::{Arch, Os, Platform, Tags};
     use uv_cache::Cache;
     use uv_client::RegistryClient;
-    use uv_configuration::{Concurrency, ConfigSettings, NoBinary, NoBuild, SetupPyStrategy};
+    use uv_configuration::{
+        Concurrency, ConfigSettings, NoBinary, NoBuild, PreviewMode, SetupPyStrategy,
+    };
     use uv_dispatch::BuildDispatch;
     use uv_distribution::DistributionDatabase;
+    use uv_git::GitResolver;
     use uv_interpreter::PythonEnvironment;
     use uv_resolver::{
         FlatIndex, InMemoryIndex, Manifest, Options, PythonRequirement, ResolutionGraph, Resolver,
@@ -122,17 +125,18 @@ mod resolver {
         client: &RegistryClient,
         venv: &PythonEnvironment,
     ) -> Result<ResolutionGraph> {
+        let build_isolation = BuildIsolation::Isolated;
+        let concurrency = Concurrency::default();
+        let config_settings = ConfigSettings::default();
         let flat_index = FlatIndex::default();
-        let index = InMemoryIndex::default();
+        let git = GitResolver::default();
         let hashes = HashStrategy::None;
-        let index_locations = IndexLocations::default();
         let in_flight = InFlight::default();
+        let index = InMemoryIndex::default();
+        let index_locations = IndexLocations::default();
         let installed_packages = EmptyInstalledPackages;
         let interpreter = venv.interpreter().clone();
         let python_requirement = PythonRequirement::from_marker_environment(&interpreter, &MARKERS);
-        let concurrency = Concurrency::default();
-        let config_settings = ConfigSettings::default();
-        let build_isolation = BuildIsolation::Isolated;
 
         let build_context = BuildDispatch::new(
             client,
@@ -141,6 +145,7 @@ mod resolver {
             &index_locations,
             &flat_index,
             &index,
+            &git,
             &in_flight,
             SetupPyStrategy::default(),
             &config_settings,
@@ -149,6 +154,7 @@ mod resolver {
             &NoBuild::None,
             &NoBinary::None,
             concurrency,
+            PreviewMode::Disabled,
         );
 
         let resolver = Resolver::new(
@@ -162,7 +168,12 @@ mod resolver {
             &hashes,
             &build_context,
             installed_packages,
-            DistributionDatabase::new(client, &build_context, concurrency.downloads),
+            DistributionDatabase::new(
+                client,
+                &build_context,
+                concurrency.downloads,
+                PreviewMode::Disabled,
+            ),
         )?;
 
         Ok(resolver.resolve().await?)

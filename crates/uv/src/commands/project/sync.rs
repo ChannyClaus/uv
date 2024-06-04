@@ -9,9 +9,10 @@ use uv_configuration::{
     SetupPyStrategy,
 };
 use uv_dispatch::BuildDispatch;
+use uv_distribution::ProjectWorkspace;
+use uv_git::GitResolver;
 use uv_installer::SitePackages;
 use uv_interpreter::PythonEnvironment;
-use uv_requirements::ProjectWorkspace;
 use uv_resolver::{FlatIndex, InMemoryIndex, Lock};
 use uv_types::{BuildIsolation, HashStrategy, InFlight};
 use uv_warnings::warn_user;
@@ -34,7 +35,7 @@ pub(crate) async fn sync(
     }
 
     // Find the project requirements.
-    let project = ProjectWorkspace::discover(std::env::current_dir()?).await?;
+    let project = ProjectWorkspace::discover(std::env::current_dir()?, None).await?;
 
     // Discover or create the virtual environment.
     let venv = project::init_environment(&project, preview, cache, printer)?;
@@ -47,7 +48,7 @@ pub(crate) async fn sync(
     };
 
     // Perform the sync operation.
-    do_sync(&project, &venv, &lock, extras, cache, printer).await?;
+    do_sync(&project, &venv, &lock, extras, preview, cache, printer).await?;
 
     Ok(ExitStatus::Success)
 }
@@ -58,6 +59,7 @@ pub(super) async fn do_sync(
     venv: &PythonEnvironment,
     lock: &Lock,
     extras: ExtrasSpecification,
+    preview: PreviewMode,
     cache: &Cache,
     printer: Printer,
 ) -> Result<(), ProjectError> {
@@ -86,6 +88,7 @@ pub(super) async fn do_sync(
     let config_settings = ConfigSettings::default();
     let dry_run = false;
     let flat_index = FlatIndex::default();
+    let git = GitResolver::default();
     let hasher = HashStrategy::default();
     let in_flight = InFlight::default();
     let index = InMemoryIndex::default();
@@ -104,6 +107,7 @@ pub(super) async fn do_sync(
         &index_locations,
         &flat_index,
         &index,
+        &git,
         &in_flight,
         setup_py,
         &config_settings,
@@ -112,6 +116,7 @@ pub(super) async fn do_sync(
         &no_build,
         &no_binary,
         concurrency,
+        preview,
     );
 
     let site_packages = SitePackages::from_executable(venv)?;
@@ -136,6 +141,7 @@ pub(super) async fn do_sync(
         venv,
         dry_run,
         printer,
+        preview,
     )
     .await?;
 

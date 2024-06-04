@@ -36,7 +36,6 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::Result;
 use url::Url;
 
 use distribution_filename::WheelFilename;
@@ -58,7 +57,6 @@ pub use crate::id::*;
 pub use crate::index_url::*;
 pub use crate::installed::*;
 pub use crate::prioritized_distribution::*;
-pub use crate::requirement::*;
 pub use crate::resolution::*;
 pub use crate::resolved::*;
 pub use crate::specified_requirement::*;
@@ -76,7 +74,6 @@ mod id;
 mod index_url;
 mod installed;
 mod prioritized_distribution;
-mod requirement;
 mod resolution;
 mod resolved;
 mod specified_requirement;
