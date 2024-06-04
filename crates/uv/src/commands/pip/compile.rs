@@ -8,12 +8,15 @@ use std::str::FromStr;
 
 use anstream::{eprint, AutoStream, StripStream};
 use anyhow::{anyhow, Result};
-use fs_err as fs;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
+use pypi_types::Requirement;
 use tracing::debug;
 
-use distribution_types::{IndexLocations, SourceAnnotation, SourceAnnotations, Verbatim};
+use distribution_types::{
+    IndexLocations, SourceAnnotation, SourceAnnotations, UnresolvedRequirementSpecification,
+    Verbatim,
+};
 use install_wheel_rs::linker::LinkMode;
 use platform_tags::Tags;
 use uv_auth::store_credentials_from_url;
@@ -57,6 +60,7 @@ pub(crate) async fn pip_compile(
     requirements: &[RequirementsSource],
     constraints: &[RequirementsSource],
     overrides: &[RequirementsSource],
+    overrides_from_workspace: Vec<Requirement>,
     extras: ExtrasSpecification,
     output_file: Option<&Path>,
     resolution_mode: ResolutionMode,
@@ -89,7 +93,6 @@ pub(crate) async fn pip_compile(
     python: Option<String>,
     system: bool,
     concurrency: Concurrency,
-    uv_lock: bool,
     native_tls: bool,
     quiet: bool,
     preview: PreviewMode,
@@ -212,6 +215,13 @@ pub(crate) async fn pip_compile(
         InMemoryIndexRef::Borrowed(&source_index)
     };
 
+    // Determine the Python requirement, based on the interpreter and the requested version.
+    let python_requirement = if let Some(python_version) = python_version.as_ref() {
+        PythonRequirement::from_python_version(&interpreter, python_version)
+    } else {
+        PythonRequirement::from_interpreter(&interpreter)
+    };
+
     // Determine the tags, markers, and interpreter to use for resolution.
     let tags = match (python_platform, python_version.as_ref()) {
         (Some(python_platform), Some(python_version)) => Cow::Owned(Tags::from_env(
@@ -247,16 +257,6 @@ pub(crate) async fn pip_compile(
         (None, Some(python_version)) => Cow::Owned(python_version.markers(interpreter.markers())),
         (None, None) => Cow::Borrowed(interpreter.markers()),
     };
-    // The marker environment to use for evaluating requirements. When
-    // `uv_lock` is enabled, we specifically do environment independent marker
-    // evaluation. (i.e., Only consider extras.)
-    let marker_filter = if uv_lock { None } else { Some(&*markers) };
-    // The Python requirement in "workspace-aware uv" should, I believe, come
-    // from the pyproject.toml. For now, we just take it from the markers
-    // (which does have its Python version set potentially from the CLI, which
-    // I think is spiritually equivalent to setting the Python version in
-    // pyproject.toml).
-    let python_requirement = PythonRequirement::from_marker_environment(&interpreter, &markers);
 
     // Generate, but don't enforce hashes for the requirements.
     let hasher = if generate_hashes {
@@ -398,6 +398,17 @@ pub(crate) async fn pip_compile(
         requirements
     };
 
+    // Merge workspace overrides.
+    let overrides: Vec<UnresolvedRequirementSpecification> = overrides
+        .iter()
+        .cloned()
+        .chain(
+            overrides_from_workspace
+                .into_iter()
+                .map(UnresolvedRequirementSpecification::from),
+        )
+        .collect();
+
     // Resolve the overrides from the provided sources.
     let overrides = NamedRequirementsResolver::new(
         overrides,
@@ -414,7 +425,7 @@ pub(crate) async fn pip_compile(
 
     for requirement in requirements
         .iter()
-        .filter(|requirement| requirement.evaluate_markers(marker_filter, &[]))
+        .filter(|requirement| requirement.evaluate_markers(Some(&markers), &[]))
     {
         if let Some(origin) = &requirement.origin {
             sources.add(
@@ -426,7 +437,7 @@ pub(crate) async fn pip_compile(
 
     for requirement in constraints
         .iter()
-        .filter(|requirement| requirement.evaluate_markers(marker_filter, &[]))
+        .filter(|requirement| requirement.evaluate_markers(Some(&markers), &[]))
     {
         if let Some(origin) = &requirement.origin {
             sources.add(
@@ -438,7 +449,7 @@ pub(crate) async fn pip_compile(
 
     for requirement in overrides
         .iter()
-        .filter(|requirement| requirement.evaluate_markers(marker_filter, &[]))
+        .filter(|requirement| requirement.evaluate_markers(Some(&markers), &[]))
     {
         if let Some(origin) = &requirement.origin {
             sources.add(
@@ -464,7 +475,7 @@ pub(crate) async fn pip_compile(
                 DistributionDatabase::new(&client, &build_dispatch, concurrency.downloads, preview),
             )
             .with_reporter(ResolverReporter::from(printer))
-            .resolve(marker_filter)
+            .resolve(Some(&markers))
             .await?
         }
         DependencyMode::Direct => Vec::new(),
@@ -495,7 +506,7 @@ pub(crate) async fn pip_compile(
         manifest.clone(),
         options,
         &python_requirement,
-        marker_filter,
+        Some(&markers),
         &tags,
         &flat_index,
         &top_level_index,
@@ -560,12 +571,6 @@ pub(crate) async fn pip_compile(
             "# Pinned dependencies known to be valid for:".green()
         )?;
         writeln!(writer, "{}", format!("#    {relevant_markers}").green())?;
-    }
-
-    if uv_lock {
-        let lock = resolution.lock()?;
-        let encoded = lock.to_toml()?;
-        fs::tokio::write("uv.lock", encoded.as_bytes()).await?;
     }
 
     // Write the index locations to the output channel.

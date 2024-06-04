@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use distribution_types::IndexLocations;
 use itertools::Itertools;
 use tempfile::tempdir_in;
 use tokio::process::Command;
@@ -10,8 +11,9 @@ use tracing::debug;
 use uv_cache::Cache;
 use uv_client::Connectivity;
 use uv_configuration::{ExtrasSpecification, PreviewMode, Upgrade};
-use uv_distribution::ProjectWorkspace;
+use uv_distribution::{ProjectWorkspace, Workspace};
 use uv_interpreter::{PythonEnvironment, SystemPython};
+use uv_normalize::PackageName;
 use uv_requirements::RequirementsSource;
 use uv_resolver::ExcludeNewer;
 use uv_warnings::warn_user;
@@ -22,6 +24,7 @@ use crate::printer::Printer;
 /// Run a command.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
+    index_locations: IndexLocations,
     extras: ExtrasSpecification,
     target: Option<String>,
     mut args: Vec<OsString>,
@@ -29,6 +32,7 @@ pub(crate) async fn run(
     python: Option<String>,
     upgrade: Upgrade,
     exclude_newer: Option<ExcludeNewer>,
+    package: Option<PackageName>,
     isolated: bool,
     preview: PreviewMode,
     connectivity: Connectivity,
@@ -41,17 +45,28 @@ pub(crate) async fn run(
 
     // Discover and sync the project.
     let project_env = if isolated {
+        // package is `None`, isolated and package are marked as conflicting in clap.
         None
     } else {
         debug!("Syncing project environment.");
 
-        let project = ProjectWorkspace::discover(std::env::current_dir()?, None).await?;
+        let project = if let Some(package) = package {
+            // We need a workspace, but we don't need to have a current package, we can be e.g. in
+            // the root of a virtual workspace and then switch into the selected package.
+            Workspace::discover(&std::env::current_dir()?, None)
+                .await?
+                .with_current_project(package.clone())
+                .with_context(|| format!("Package `{package}` not found in workspace"))?
+        } else {
+            ProjectWorkspace::discover(&std::env::current_dir()?, None).await?
+        };
         let venv = project::init_environment(&project, preview, cache, printer)?;
 
         // Lock and sync the environment.
         let lock = project::lock::do_lock(
             &project,
             &venv,
+            &index_locations,
             upgrade,
             exclude_newer,
             preview,
@@ -59,7 +74,17 @@ pub(crate) async fn run(
             printer,
         )
         .await?;
-        project::sync::do_sync(&project, &venv, &lock, extras, preview, cache, printer).await?;
+        project::sync::do_sync(
+            &project,
+            &venv,
+            &lock,
+            &index_locations,
+            extras,
+            preview,
+            cache,
+            printer,
+        )
+        .await?;
 
         Some(venv)
     };
@@ -101,8 +126,16 @@ pub(crate) async fn run(
 
         // Install the ephemeral requirements.
         Some(
-            project::update_environment(venv, &requirements, connectivity, cache, printer, preview)
-                .await?,
+            project::update_environment(
+                venv,
+                &requirements,
+                &index_locations,
+                connectivity,
+                cache,
+                printer,
+                preview,
+            )
+            .await?,
         )
     };
 
