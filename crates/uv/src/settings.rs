@@ -22,8 +22,8 @@ use uv_workspace::{Combine, PipOptions, Workspace};
 
 use crate::cli::{
     ColorChoice, GlobalArgs, LockArgs, Maybe, PipCheckArgs, PipCompileArgs, PipFreezeArgs,
-    PipInstallArgs, PipListArgs, PipShowArgs, PipSyncArgs, PipUninstallArgs, RunArgs, SyncArgs,
-    ToolRunArgs, VenvArgs, PipTreeArgs
+    PipInstallArgs, PipListArgs, PipShowArgs, PipSyncArgs, PipTreeArgs, PipUninstallArgs, RunArgs,
+    SyncArgs, ToolRunArgs, VenvArgs,
 };
 use crate::commands::ListFormat;
 
