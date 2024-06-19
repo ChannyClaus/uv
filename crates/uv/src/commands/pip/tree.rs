@@ -156,6 +156,7 @@ impl<'a> DisplayDependencyGraph<'a> {
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
     ) -> Result<Vec<String>, Error> {
+        println!("visit: {}", installed_dist.name());
         let mut lines = Vec::new();
 
         let package_name = installed_dist.name().to_string();
