@@ -160,7 +160,7 @@ jobs:
       matrix:
         include:
           - os: "windows"
-            runner: "windows-latest-large"
+            runner: "windows-latest"
       fail-fast: false
     runs-on:
       labels: ${{ matrix.runner }}
