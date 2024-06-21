@@ -952,6 +952,7 @@ impl PipShowSettings {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub(crate) struct PipTreeSettings {
+    pub(crate) depth: u8,
     // CLI-only settings.
     pub(crate) shared: PipSettings,
 }
@@ -960,6 +961,7 @@ impl PipTreeSettings {
     /// Resolve the [`PipTreeSettings`] from the CLI and workspace configuration.
     pub(crate) fn resolve(args: PipTreeArgs, filesystem: Option<FilesystemOptions>) -> Self {
         let PipTreeArgs {
+            depth,
             strict,
             no_strict,
             python,
@@ -968,6 +970,7 @@ impl PipTreeSettings {
         } = args;
 
         Self {
+            depth,
             // Shared settings.
             shared: PipSettings::combine(
                 PipOptions {
