@@ -249,8 +249,7 @@ fn depth() {
     │   └── numpy v1.26.4 (*)
     ├── joblib v1.3.2
     └── threadpoolctl v3.4.0
-    Note: (*) indicates the package has been `de-duplicated`.
-    The dependencies for the package have already been shown elsewhere in the graph, and so are not repeated.
+    (*) Package tree already displayed
 
     ----- stderr -----
 
@@ -566,8 +565,7 @@ fn prune_big_tree() {
             ├── markdown-it-py v3.0.0
             │   └── mdurl v0.1.2
             └── pygments v2.17.2 (*)
-    Note: (*) indicates the package has been `de-duplicated`.
-    The dependencies for the package have already been shown elsewhere in the graph, and so are not repeated.
+    (*) Package tree already displayed
 
     ----- stderr -----
     "###
