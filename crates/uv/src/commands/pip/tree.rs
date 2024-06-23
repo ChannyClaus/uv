@@ -49,13 +49,14 @@ pub(crate) fn pip_tree(
         .join("\n");
     writeln!(printer.stdout(), "{rendered_tree}").unwrap();
     if rendered_tree.contains('*') {
-        if no_dedupe {
+        if !no_dedupe {
             writeln!(
                 printer.stdout(),
                 "{}",
                 "(*) Package tree already displayed".italic()
             )?;
         } else {
+            // if de-duplication is disabled, all (*) indicate dependency cycles.
             writeln!(printer.stdout(), "{}", "(*) Dependency cycle".italic())?;
         }
     }

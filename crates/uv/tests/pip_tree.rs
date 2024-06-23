@@ -150,7 +150,7 @@ fn nested_dependencies() {
     │   └── numpy v1.26.4 (*)
     ├── joblib v1.3.2
     └── threadpoolctl v3.4.0
-    (*) Dependency cycle
+    (*) Package tree already displayed
 
     ----- stderr -----
     "###
@@ -259,7 +259,7 @@ fn nested_dependencies_more_complex() {
             ├── markdown-it-py v3.0.0
             │   └── mdurl v0.1.2
             └── pygments v2.17.2 (*)
-    (*) Dependency cycle
+    (*) Package tree already displayed
 
     ----- stderr -----
     "###
@@ -328,8 +328,8 @@ fn cyclic_dependency() {
     uv-cyclic-dependencies-c v0.1.0
     └── uv-cyclic-dependencies-a v0.1.0
         └── uv-cyclic-dependencies-b v0.1.0
-            └── uv-cyclic-dependencies-a v0.1.0 (*)
-    (*) Dependency cycle
+            └── uv-cyclic-dependencies-a v0.1.0 (#)
+    (#) Dependency cycle
 
     ----- stderr -----
     "###
@@ -534,7 +534,7 @@ fn multiple_packages_shared_descendant() {
     time-machine v2.14.1
     └── python-dateutil v2.9.0.post0 (*)
     urllib3 v2.2.1
-    (*) Dependency cycle
+    (*) Package tree already displayed
 
     ----- stderr -----
     "###
@@ -651,8 +651,8 @@ fn no_dedupe_and_cycle() {
     uv-cyclic-dependencies-c v0.1.0
     └── uv-cyclic-dependencies-a v0.1.0
         └── uv-cyclic-dependencies-b v0.1.0
-            └── uv-cyclic-dependencies-a v0.1.0 (*)
-    (*) Package tree already displayed
+            └── uv-cyclic-dependencies-a v0.1.0 (#)
+    (#) Dependency cycle
 
     ----- stderr -----
     "###
