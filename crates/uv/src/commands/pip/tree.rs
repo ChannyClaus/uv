@@ -51,7 +51,7 @@ pub(crate) fn pip_tree(
     if rendered_tree.contains('*') {
         if no_dedupe {
             // if de-duplication is disabled, all (*) indicate dependency cycles.
-            writeln!(printer.stdout(), "{}", "(*) Dependency cycle".italic())?;
+            writeln!(printer.stdout(), "{}", "(*) Package tree is a cycle and cannot be shown".italic())?;
         } else {
             writeln!(
                 printer.stdout(),
