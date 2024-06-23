@@ -49,14 +49,15 @@ pub(crate) fn pip_tree(
         .join("\n");
     writeln!(printer.stdout(), "{rendered_tree}").unwrap();
     if rendered_tree.contains('*') {
-        writeln!(
-            printer.stdout(),
-            "{}",
-            "(*) Package tree already displayed".italic()
-        )?;
-    }
-    if rendered_tree.contains('#') {
-        writeln!(printer.stdout(), "{}", "(#) Dependency cycle".italic())?;
+        if no_dedupe {
+            writeln!(
+                printer.stdout(),
+                "{}",
+                "(*) Package tree already displayed".italic()
+            )?;
+        } else {
+            writeln!(printer.stdout(), "{}", "(*) Dependency cycle".italic())?;
+        }
     }
 
     // Validate that the environment is consistent.
@@ -142,13 +143,10 @@ impl<'a> DisplayDependencyGraph<'a> {
         let is_visited = visited.contains(&package_name);
         let line = format!("{} v{}", package_name, installed_dist.version());
 
-        if path.contains(&package_name) {
-            return vec![format!("{} (#)", line)];
-        }
-
-        // If the package has been visited and de-duplication is enabled (default),
-        // skip the traversal.
-        if is_visited && !self.no_dedupe {
+        // Short-circuit if:
+        // 1. current path forms a dependency cycle, or
+        // 2. the package has been visited and de-duplication is enabled (default),
+        if path.contains(&package_name) || (is_visited && !self.no_dedupe) {
             return vec![format!("{} (*)", line)];
         }
 
