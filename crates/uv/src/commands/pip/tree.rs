@@ -146,9 +146,7 @@ impl<'a> DisplayDependencyGraph<'a> {
         // Short-circuit if the current package is given in the prune list.
         if self.prune.contains(installed_dist.name()) {
             return Vec::new();
-        }
-
-        let lines: Vec<String> = Vec::new();
+        };
         let package_name = installed_dist.name().to_string();
         let is_visited = visited.contains(&package_name);
         let line = format!("{} v{}", package_name, installed_dist.version());
@@ -163,13 +161,13 @@ impl<'a> DisplayDependencyGraph<'a> {
         let mut lines = vec![line];
 
         path.push(package_name.clone());
-        let binding = installed_dist.metadata().unwrap();
-        let required_packages = binding
-            .requires_dist
+        let required_dists = installed_dist.metadata().unwrap().requires_dist;
+        // Filter out the required distributions that are not installed.
+        let required_installed_dists = required_dists
             .iter()
             .filter(|r| self.dist_by_package_name.contains_key(&r.name))
             .collect::<Vec<_>>();
-        for (index, required_package) in required_packages.iter().enumerate() {
+        for (index, required_package) in required_installed_dists.iter().enumerate() {
             // Skip if the current package is not one of the installed distributions.
             if !self
                 .dist_by_package_name
@@ -197,7 +195,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             // those in Group 3 have `└── ` at the top and `    ` at the rest.
             // This observation is true recursively even when looking at the subtree rooted
             // at `level_1_0`.
-            let (prefix_top, prefix_rest) = if required_packages.len() - 1 == index {
+            let (prefix_top, prefix_rest) = if required_installed_dists.len() - 1 == index {
                 ("└── ", "    ")
             } else {
                 ("├── ", "│   ")
