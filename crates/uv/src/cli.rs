@@ -1349,6 +1349,14 @@ pub(crate) struct PipShowArgs {
 #[derive(Args)]
 #[allow(clippy::struct_excessive_bools)]
 pub(crate) struct PipTreeArgs {
+    /// Maximum display depth of the dependency tree
+    #[arg(long, short, default_value_t = 255)]
+    pub(crate) depth: u8,
+
+    /// Prune the given package from the display of the dependency tree.
+    #[arg(long)]
+    pub(crate) prune: Vec<PackageName>,
+
     /// Validate the virtual environment, to detect packages with missing dependencies or other
     /// issues.
     #[arg(long, overrides_with("no_strict"))]

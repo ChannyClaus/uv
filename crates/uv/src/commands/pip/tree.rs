@@ -17,7 +17,10 @@ use crate::printer::Printer;
 use std::collections::{HashMap, HashSet};
 
 /// Display the installed packages in the current environment as a dependency tree.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pip_tree(
+    depth: u8,
+    prune: Vec<PackageName>,
     strict: bool,
     python: Option<&str>,
     system: bool,
@@ -41,7 +44,7 @@ pub(crate) fn pip_tree(
     // Build the installed index.
     let site_packages = SitePackages::from_executable(&environment)?;
 
-    let rendered_tree = DisplayDependencyGraph::new(&site_packages)
+    let rendered_tree = DisplayDependencyGraph::new(&site_packages, depth.into(), prune)
         .render()
         .join("\n");
     writeln!(printer.stdout(), "{rendered_tree}").unwrap();
@@ -93,11 +96,21 @@ struct DisplayDependencyGraph<'a> {
     // It is used to determine the starting nodes when recursing the
     // dependency graph.
     required_packages: HashSet<PackageName>,
+
+    // Maximum display depth of the dependency tree
+    depth: usize,
+
+    // Prune the given package from the display of the dependency tree.
+    prune: Vec<PackageName>,
 }
 
 impl<'a> DisplayDependencyGraph<'a> {
     /// Create a new [`DisplayDependencyGraph`] for the set of installed distributions.
-    fn new(site_packages: &'a SitePackages) -> DisplayDependencyGraph<'a> {
+    fn new(
+        site_packages: &'a SitePackages,
+        depth: usize,
+        prune: Vec<PackageName>,
+    ) -> DisplayDependencyGraph<'a> {
         let mut dist_by_package_name = HashMap::new();
         let mut required_packages = HashSet::new();
         for site_package in site_packages.iter() {
@@ -115,6 +128,8 @@ impl<'a> DisplayDependencyGraph<'a> {
             site_packages,
             dist_by_package_name,
             required_packages,
+            depth,
+            prune,
         }
     }
 
@@ -125,6 +140,16 @@ impl<'a> DisplayDependencyGraph<'a> {
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
     ) -> Vec<String> {
+        // Short-circuit if the current path is longer than the provided depth.
+        if path.len() > self.depth {
+            return Vec::new();
+        }
+
+        // Short-circuit if the current package is given in the prune list.
+        if self.prune.contains(installed_dist.name()) {
+            return Vec::new();
+        }
+
         let mut lines = Vec::new();
         let package_name = installed_dist.name().to_string();
         let is_visited = visited.contains(&package_name);
