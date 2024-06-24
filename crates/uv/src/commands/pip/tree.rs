@@ -16,8 +16,6 @@ use crate::commands::ExitStatus;
 use crate::printer::Printer;
 use std::collections::{HashMap, HashSet};
 
-use pypi_types::VerbatimParsedUrl;
-
 /// Display the installed packages in the current environment as a dependency tree.
 pub(crate) fn pip_tree(
     strict: bool,
@@ -70,27 +68,6 @@ pub(crate) fn pip_tree(
     Ok(ExitStatus::Success)
 }
 
-// Filter out all required packages of the given distribution if they
-// are required by an extra.
-// For example, `requests==2.32.3` requires `charset-normalizer`, `idna`, `urllib`, and `certifi` at
-// all times, `PySocks` on `socks` extra and `chardet` on `use_chardet_on_py3` extra.
-// This function will return `["charset-normalizer", "idna", "urllib", "certifi"]` for `requests`.
-fn required_with_no_extra(dist: &InstalledDist) -> Vec<pep508_rs::Requirement<VerbatimParsedUrl>> {
-    let metadata = dist.metadata().unwrap();
-    return metadata
-        .requires_dist
-        .into_iter()
-        .filter(|r| {
-            r.marker.is_none()
-                || !r
-                    .marker
-                    .as_ref()
-                    .unwrap()
-                    .evaluate_optional_environment(None, &metadata.provides_extras[..])
-        })
-        .collect::<Vec<_>>();
-}
-
 // Render the line for the given installed distribution in the dependency tree.
 fn render_line(installed_dist: &InstalledDist, is_visited: bool) -> String {
     let mut line = String::new();
@@ -127,8 +104,10 @@ impl<'a> DisplayDependencyGraph<'a> {
             dist_by_package_name.insert(site_package.name(), site_package);
         }
         for site_package in site_packages.iter() {
-            for required in required_with_no_extra(site_package) {
-                required_packages.insert(required.name.clone());
+            for required in site_package.metadata().unwrap().requires_dist {
+                if dist_by_package_name.contains_key(&required.name) {
+                    required_packages.insert(required.name.clone());
+                }
             }
         }
 
@@ -155,8 +134,12 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
 
         path.push(package_name.clone());
-        visited.insert(package_name.clone());
-        let required_packages = required_with_no_extra(installed_dist);
+        let binding = installed_dist.metadata().unwrap();
+        let required_packages = binding
+            .requires_dist
+            .iter()
+            .filter(|r| self.dist_by_package_name.contains_key(&r.name))
+            .collect::<Vec<_>>();
         for (index, required_package) in required_packages.iter().enumerate() {
             // Skip if the current package is not one of the installed distributions.
             if !self
