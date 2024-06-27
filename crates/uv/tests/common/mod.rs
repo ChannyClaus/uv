@@ -1,19 +1,19 @@
 // The `unreachable_pub` is to silence false positives in RustRover.
 #![allow(dead_code, unreachable_pub)]
 
-use assert_cmd::assert::{Assert, OutputAssertExt};
-use assert_cmd::Command;
-use assert_fs::assert::PathAssert;
-use assert_fs::fixture::{ChildPath, PathChild, PathCreateDir, SymlinkToFile};
-use predicates::prelude::predicate;
-use regex::Regex;
 use std::borrow::BorrowMut;
 use std::env;
 use std::ffi::OsString;
 use std::iter::Iterator;
 use std::path::{Path, PathBuf};
-use std::process::Output;
+use std::process::{Command, Output};
 use std::str::FromStr;
+
+use assert_cmd::assert::{Assert, OutputAssertExt};
+use assert_fs::assert::PathAssert;
+use assert_fs::fixture::{ChildPath, PathChild, PathCreateDir, SymlinkToFile};
+use predicates::prelude::predicate;
+use regex::Regex;
 
 use uv_cache::Cache;
 use uv_fs::Simplified;
@@ -23,7 +23,7 @@ use uv_toolchain::{
 };
 
 // Exclude any packages uploaded after this date.
-pub static EXCLUDE_NEWER: &str = "2024-03-25T00:00:00Z";
+static EXCLUDE_NEWER: &str = "2024-03-25T00:00:00Z";
 
 /// Using a find links url allows using `--index-url` instead of `--extra-index-url` in tests
 /// to prevent dependency confusion attacks against our test suite.
@@ -55,7 +55,7 @@ pub const INSTA_FILTERS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Create a context for tests which simplfiies shared behavior across tests.
+/// Create a context for tests which simplifies shared behavior across tests.
 ///
 /// * Set the current directory to a temporary directory (`temp_dir`).
 /// * Set the cache dir to a different temporary directory (`cache_dir`).
@@ -65,6 +65,7 @@ pub struct TestContext {
     pub temp_dir: assert_fs::TempDir,
     pub cache_dir: assert_fs::TempDir,
     pub python_dir: assert_fs::TempDir,
+    pub home_dir: assert_fs::TempDir,
     pub venv: ChildPath,
     pub workspace_root: PathBuf,
 
@@ -96,9 +97,10 @@ impl TestContext {
     ///
     /// See [`TestContext::new`] if only a single version is desired.
     pub fn new_with_versions(python_versions: &[&str]) -> Self {
-        let temp_dir = assert_fs::TempDir::new().expect("Failed to create temp dir");
-        let cache_dir = assert_fs::TempDir::new().expect("Failed to create cache dir");
-        let python_dir = assert_fs::TempDir::new().expect("Failed to create test Python dir");
+        let temp_dir = assert_fs::TempDir::new().expect("Failed to create test working directory");
+        let cache_dir = assert_fs::TempDir::new().expect("Failed to create test cache directory");
+        let python_dir = assert_fs::TempDir::new().expect("Failed to create test Python directory");
+        let home_dir = assert_fs::TempDir::new().expect("Failed to create test home directory");
 
         // Canonicalize the temp dir for consistent snapshot behavior
         let canonical_temp_dir = temp_dir.canonicalize().unwrap();
@@ -194,6 +196,11 @@ impl TestContext {
                 .map(|pattern| (pattern, "[PYTHON_DIR]/".to_string())),
         );
         filters.extend(
+            Self::path_patterns(&home_dir)
+                .into_iter()
+                .map(|pattern| (pattern, "[HOME]/".to_string())),
+        );
+        filters.extend(
             Self::path_patterns(&workspace_root)
                 .into_iter()
                 .map(|pattern| (pattern, "[WORKSPACE]/".to_string())),
@@ -231,6 +238,7 @@ impl TestContext {
             temp_dir,
             cache_dir,
             python_dir,
+            home_dir,
             venv,
             workspace_root,
             python_version,
@@ -239,284 +247,162 @@ impl TestContext {
         }
     }
 
-    /// Create a `pip compile` command for testing.
-    pub fn compile(&self) -> std::process::Command {
-        let mut command = self.compile_without_exclude_newer();
-        command.arg("--exclude-newer").arg(EXCLUDE_NEWER);
-        command
-    }
-
-    /// Create a `pip compile` command with no `--exclude-newer` option.
+    /// Shared behaviour for almost all test commands.
     ///
-    /// One should avoid using this in tests to the extent possible because
-    /// it can result in tests failing when the index state changes. Therefore,
-    /// if you use this, there should be some other kind of mitigation in place.
-    /// For example, pinning package versions.
-    pub fn compile_without_exclude_newer(&self) -> std::process::Command {
-        let mut cmd = std::process::Command::new(get_bin());
-        cmd.arg("pip")
-            .arg("compile")
+    /// * Use a temporary cache directory
+    /// * Use a temporary virtual environment with the Python version of [`Self`]
+    /// * Don't wrap text output based on the terminal we're in, the test output doesn't get printed
+    ///   but snapshotted to a string.
+    /// * Use a fake `HOME` to avoid accidentally changing the developer's machine.
+    /// * Hide other Python toolchain with `UV_TOOLCHAIN_DIR` and installed interpreters with
+    ///   `UV_TEST_PYTHON_PATH`.
+    /// * Increase the stack size to avoid stack overflows on windows due to large async functions.
+    pub fn add_shared_args(&self, command: &mut Command) {
+        command
             .arg("--cache-dir")
             .arg(self.cache_dir.path())
             .env("VIRTUAL_ENV", self.venv.as_os_str())
             .env("UV_NO_WRAP", "1")
+            .env("HOME", self.home_dir.as_os_str())
             .env("UV_TOOLCHAIN_DIR", "")
             .env("UV_TEST_PYTHON_PATH", &self.python_path())
+            .env("UV_EXCLUDE_NEWER", EXCLUDE_NEWER)
             .current_dir(self.temp_dir.path());
 
         if cfg!(all(windows, debug_assertions)) {
             // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
             // default windows stack of 1MB
-            cmd.env("UV_STACK_SIZE", (8 * 1024 * 1024).to_string());
+            command.env("UV_STACK_SIZE", (8 * 1024 * 1024).to_string());
         }
+    }
 
-        cmd
+    /// Create a `pip compile` command for testing.
+    pub fn pip_compile(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("pip").arg("compile");
+        self.add_shared_args(&mut command);
+        command
+    }
+
+    /// Create a `pip compile` command for testing.
+    pub fn pip_sync(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("pip").arg("sync");
+        self.add_shared_args(&mut command);
+        command
     }
 
     /// Create a `uv venv` command
-    pub fn venv(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("venv")
-            .arg("--exclude-newer")
-            .arg(EXCLUDE_NEWER)
-            .env("UV_CACHE_DIR", self.cache_dir.path())
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_STACK_SIZE", (2 * 1024 * 1024).to_string())
-            .current_dir(self.temp_dir.as_os_str());
+    pub fn venv(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("venv");
+        self.add_shared_args(&mut command);
+        command.env_remove("VIRTUAL_ENV");
         command
     }
 
     /// Create a `pip install` command with options shared across scenarios.
-    pub fn install(&self) -> std::process::Command {
-        let mut command = self.install_without_exclude_newer();
-        command.arg("--exclude-newer").arg(EXCLUDE_NEWER);
+    pub fn pip_install(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("pip").arg("install");
+        self.add_shared_args(&mut command);
         command
     }
 
-    /// Create a `pip install` command with no `--exclude-newer` option.
-    ///
-    /// One should avoid using this in tests to the extent possible because
-    /// it can result in tests failing when the index state changes. Therefore,
-    /// if you use this, there should be some other kind of mitigation in place.
-    /// For example, pinning package versions.
-    pub fn install_without_exclude_newer(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("pip")
-            .arg("install")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    /// Create a `pip uninstall` command with options shared across scenarios.
+    pub fn pip_uninstall(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("pip").arg("uninstall");
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv sync` command with options shared across scenarios.
-    pub fn sync(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("sync")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    pub fn sync(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("sync");
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv lock` command with options shared across scenarios.
-    pub fn lock(&self) -> std::process::Command {
-        let mut command = self.lock_without_exclude_newer();
-        command
-            .arg("--exclude-newer")
-            .arg(EXCLUDE_NEWER)
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path());
-        command
-    }
-
-    /// Create a `uv lock` command with no `--exclude-newer` option.
-    ///
-    /// One should avoid using this in tests to the extent possible because
-    /// it can result in tests failing when the index state changes. Therefore,
-    /// if you use this, there should be some other kind of mitigation in place.
-    /// For example, pinning package versions.
-    pub fn lock_without_exclude_newer(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("lock")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    pub fn lock(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("lock");
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv toolchain find` command with options shared across scenarios.
-    pub fn toolchain_find(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
+    pub fn toolchain_find(&self) -> Command {
+        let mut command = Command::new(get_bin());
         command
             .arg("toolchain")
             .arg("find")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
             .env("UV_PREVIEW", "1")
             .env("UV_TOOLCHAIN_DIR", "")
             .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv run` command with options shared across scenarios.
-    pub fn run(&self) -> std::process::Command {
-        let mut command = self.run_without_exclude_newer();
-        command.arg("--exclude-newer").arg(EXCLUDE_NEWER);
-        command
-    }
-
-    /// Create a `uv run` command with no `--exclude-newer` option.
-    ///
-    /// One should avoid using this in tests to the extent possible because
-    /// it can result in tests failing when the index state changes. Therefore,
-    /// if you use this, there should be some other kind of mitigation in place.
-    /// For example, pinning package versions.
-    pub fn run_without_exclude_newer(&self) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("run")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    pub fn run(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("run");
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv tool run` command with options shared across scenarios.
-    pub fn tool_run(&self) -> std::process::Command {
-        let mut command = self.tool_run_without_exclude_newer();
+    pub fn tool_run(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("tool").arg("run");
+        self.add_shared_args(&mut command);
+        command
+    }
+
+    /// Create a `uv tool install` command with options shared across scenarios.
+    pub fn tool_install(&self) -> std::process::Command {
+        let mut command = self.tool_install_without_exclude_newer();
         command.arg("--exclude-newer").arg(EXCLUDE_NEWER);
         command
     }
 
-    /// Create a `uv tool run` command with no `--exclude-newer` option.
+    /// Create a `uv tool install` command with no `--exclude-newer` option.
     ///
     /// One should avoid using this in tests to the extent possible because
     /// it can result in tests failing when the index state changes. Therefore,
     /// if you use this, there should be some other kind of mitigation in place.
     /// For example, pinning package versions.
-    pub fn tool_run_without_exclude_newer(&self) -> std::process::Command {
+    pub fn tool_install_without_exclude_newer(&self) -> std::process::Command {
         let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("tool")
-            .arg("run")
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .env("UV_TOOLCHAIN_DIR", "")
-            .env("UV_TEST_PYTHON_PATH", &self.python_path())
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+        command.arg("tool").arg("install");
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv add` command for the given requirements.
-    pub fn add(&self, reqs: &[&str]) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
-        command
-            .arg("add")
-            .args(reqs)
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .current_dir(&self.temp_dir);
-
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    pub fn add(&self, reqs: &[&str]) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("add").args(reqs);
+        self.add_shared_args(&mut command);
         command
     }
 
     /// Create a `uv remove` command for the given requirements.
-    pub fn remove(&self, reqs: &[&str]) -> std::process::Command {
-        let mut command = std::process::Command::new(get_bin());
+    pub fn remove(&self, reqs: &[&str]) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("remove").args(reqs);
+        self.add_shared_args(&mut command);
         command
-            .arg("remove")
-            .args(reqs)
-            .arg("--cache-dir")
-            .arg(self.cache_dir.path())
-            .env("VIRTUAL_ENV", self.venv.as_os_str())
-            .env("UV_NO_WRAP", "1")
-            .current_dir(&self.temp_dir);
+    }
 
-        if cfg!(all(windows, debug_assertions)) {
-            // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-            // default windows stack of 1MB
-            command.env("UV_STACK_SIZE", (4 * 1024 * 1024).to_string());
-        }
-
+    /// Create a `uv clean` command.
+    pub fn clean(&self) -> Command {
+        let mut command = Command::new(get_bin());
+        command.arg("clean");
+        self.add_shared_args(&mut command);
         command
     }
 
@@ -526,7 +412,7 @@ impl TestContext {
 
     /// Run the given python code and check whether it succeeds.
     pub fn assert_command(&self, command: &str) -> Assert {
-        std::process::Command::new(venv_to_interpreter(&self.venv))
+        Command::new(venv_to_interpreter(&self.venv))
             // Our tests change files in <1s, so we must disable CPython bytecode caching or we'll get stale files
             // https://github.com/python/cpython/issues/75953
             .arg("-B")
@@ -538,7 +424,7 @@ impl TestContext {
 
     /// Run the given python file and check whether it succeeds.
     pub fn assert_file(&self, file: impl AsRef<Path>) -> Assert {
-        std::process::Command::new(venv_to_interpreter(&self.venv))
+        Command::new(venv_to_interpreter(&self.venv))
             // Our tests change files in <1s, so we must disable CPython bytecode caching or we'll get stale files
             // https://github.com/python/cpython/issues/75953
             .arg("-B")
@@ -707,7 +593,7 @@ pub fn create_venv_from_executable<P: AsRef<std::path::Path>>(
     cache_dir: &assert_fs::TempDir,
     python: &Path,
 ) {
-    Command::new(get_bin())
+    assert_cmd::Command::new(get_bin())
         .arg("venv")
         .arg(path.as_ref().as_os_str())
         .arg("--cache-dir")
@@ -775,6 +661,7 @@ pub fn python_toolchains_for_versions(
 
 #[derive(Debug, Copy, Clone)]
 pub enum WindowsFilters {
+    CachedPlatform,
     Platform,
     Universal,
 }
@@ -783,7 +670,7 @@ pub enum WindowsFilters {
 ///
 /// This function is derived from `insta_cmd`s `spawn_with_info`.
 pub fn run_and_format<T: AsRef<str>>(
-    mut command: impl BorrowMut<std::process::Command>,
+    mut command: impl BorrowMut<Command>,
     filters: impl AsRef<[(T, T)]>,
     function_name: &str,
     windows_filters: Option<WindowsFilters>,
@@ -854,6 +741,10 @@ pub fn run_and_format<T: AsRef<str>>(
                     for verb in match windows_filters {
                         WindowsFilters::Platform => {
                             ["Resolved", "Prepared", "Installed", "Uninstalled"].iter()
+                        }
+                        // When cached, "Prepared" should not change.
+                        WindowsFilters::CachedPlatform => {
+                            ["Resolved", "Installed", "Uninstalled"].iter()
                         }
                         WindowsFilters::Universal => {
                             ["Prepared", "Installed", "Uninstalled"].iter()
@@ -945,6 +836,12 @@ macro_rules! uv_snapshot {
     ($filters:expr, universal_windows_filters=true, $spawnable:expr, @$snapshot:literal) => {{
         // Take a reference for backwards compatibility with the vec-expecting insta filters.
         let (snapshot, output) = $crate::common::run_and_format($spawnable, &$filters, function_name!(), Some($crate::common::WindowsFilters::Universal));
+        ::insta::assert_snapshot!(snapshot, @$snapshot);
+        output
+    }};
+    ($filters:expr, cached_windows_filters=true, $spawnable:expr, @$snapshot:literal) => {{
+        // Take a reference for backwards compatibility with the vec-expecting insta filters.
+        let (snapshot, output) = $crate::common::run_and_format($spawnable, &$filters, function_name!(), Some($crate::common::WindowsFilters::CachedPlatform));
         ::insta::assert_snapshot!(snapshot, @$snapshot);
         output
     }};

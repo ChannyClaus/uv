@@ -1,13 +1,13 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use pep508_rs::PackageName;
 use uv_cache::Cache;
 use uv_client::Connectivity;
 use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode};
 use uv_distribution::pyproject_mut::PyProjectTomlMut;
-use uv_distribution::ProjectWorkspace;
+use uv_distribution::{ProjectWorkspace, Workspace};
 use uv_toolchain::{ToolchainPreference, ToolchainRequest};
-use uv_warnings::warn_user;
+use uv_warnings::{warn_user, warn_user_once};
 
 use crate::commands::pip::operations::Modifications;
 use crate::commands::{project, ExitStatus};
@@ -19,6 +19,7 @@ use crate::settings::{InstallerSettings, ResolverSettings};
 pub(crate) async fn remove(
     requirements: Vec<PackageName>,
     dev: bool,
+    package: Option<PackageName>,
     python: Option<String>,
     toolchain_preference: ToolchainPreference,
     preview: PreviewMode,
@@ -29,11 +30,18 @@ pub(crate) async fn remove(
     printer: Printer,
 ) -> Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv remove` is experimental and may change without warning.");
+        warn_user_once!("`uv remove` is experimental and may change without warning.");
     }
 
-    // Find the project requirements.
-    let project = ProjectWorkspace::discover(&std::env::current_dir()?, None).await?;
+    // Find the project in the workspace.
+    let project = if let Some(package) = package {
+        Workspace::discover(&std::env::current_dir()?, None)
+            .await?
+            .with_current_project(package.clone())
+            .with_context(|| format!("Package `{package}` not found in workspace"))?
+    } else {
+        ProjectWorkspace::discover(&std::env::current_dir()?, None).await?
+    };
 
     let mut pyproject = PyProjectTomlMut::from_toml(project.current_project().pyproject_toml())?;
     for req in requirements {
@@ -47,7 +55,7 @@ pub(crate) async fn remove(
                     .filter(|deps| !deps.is_empty())
                     .is_some()
                 {
-                    uv_warnings::warn_user!("`{req}` is not a development dependency; try calling `uv remove` without the `--dev` flag");
+                    warn_user!("`{req}` is not a development dependency; try calling `uv remove` without the `--dev` flag");
                 }
 
                 anyhow::bail!("The dependency `{req}` could not be found in `dev-dependencies`");
@@ -65,9 +73,7 @@ pub(crate) async fn remove(
                 .filter(|deps| !deps.is_empty())
                 .is_some()
             {
-                uv_warnings::warn_user!(
-                    "`{req}` is a development dependency; try calling `uv remove --dev`"
-                );
+                warn_user!("`{req}` is a development dependency; try calling `uv remove --dev`");
             }
 
             anyhow::bail!("The dependency `{req}` could not be found in `dependencies`");
@@ -101,16 +107,7 @@ pub(crate) async fn remove(
     let lock = project::lock::do_lock(
         project.workspace(),
         venv.interpreter(),
-        &settings.upgrade,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.resolution,
-        &settings.prerelease,
-        &settings.config_setting,
-        settings.exclude_newer.as_ref(),
-        &settings.link_mode,
-        &settings.build_options,
+        settings.as_ref(),
         preview,
         connectivity,
         concurrency,
@@ -134,14 +131,7 @@ pub(crate) async fn remove(
         extras,
         dev,
         Modifications::Exact,
-        &settings.reinstall,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.config_setting,
-        &settings.link_mode,
-        &settings.compile_bytecode,
-        &settings.build_options,
+        settings.as_ref(),
         preview,
         connectivity,
         concurrency,

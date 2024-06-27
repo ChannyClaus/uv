@@ -11,7 +11,7 @@ use uv_toolchain::{
     find_toolchains, DiscoveryError, EnvironmentPreference, Toolchain, ToolchainNotFound,
     ToolchainPreference, ToolchainRequest, ToolchainSource,
 };
-use uv_warnings::warn_user;
+use uv_warnings::warn_user_once;
 
 use crate::commands::ExitStatus;
 use crate::printer::Printer;
@@ -25,7 +25,6 @@ enum Kind {
 }
 
 /// List available toolchains.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn list(
     kinds: ToolchainListKinds,
     all_versions: bool,
@@ -36,7 +35,7 @@ pub(crate) async fn list(
     printer: Printer,
 ) -> Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv toolchain list` is experimental and may change without warning.");
+        warn_user_once!("`uv toolchain list` is experimental and may change without warning.");
     }
 
     let download_request = match kinds {

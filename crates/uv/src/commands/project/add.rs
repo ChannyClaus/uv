@@ -1,18 +1,20 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+
+use pep508_rs::ExtraName;
+use uv_cache::Cache;
 use uv_client::{BaseClientBuilder, Connectivity, FlatIndexClient, RegistryClientBuilder};
+use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode, SetupPyStrategy};
 use uv_dispatch::BuildDispatch;
 use uv_distribution::pyproject::{Source, SourceError};
 use uv_distribution::pyproject_mut::PyProjectTomlMut;
+use uv_distribution::{DistributionDatabase, ProjectWorkspace, Workspace};
 use uv_git::GitResolver;
+use uv_normalize::PackageName;
 use uv_requirements::{NamedRequirementsResolver, RequirementsSource, RequirementsSpecification};
-use uv_resolver::{FlatIndex, InMemoryIndex, OptionsBuilder};
+use uv_resolver::{FlatIndex, InMemoryIndex};
 use uv_toolchain::{ToolchainPreference, ToolchainRequest};
 use uv_types::{BuildIsolation, HashStrategy, InFlight};
-
-use uv_cache::Cache;
-use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode, SetupPyStrategy};
-use uv_distribution::{DistributionDatabase, ProjectWorkspace};
-use uv_warnings::warn_user;
+use uv_warnings::warn_user_once;
 
 use crate::commands::pip::operations::Modifications;
 use crate::commands::pip::resolution_environment;
@@ -25,13 +27,14 @@ use crate::settings::ResolverInstallerSettings;
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub(crate) async fn add(
     requirements: Vec<RequirementsSource>,
-    workspace: bool,
     dev: bool,
     editable: Option<bool>,
-    raw: bool,
+    raw_sources: bool,
     rev: Option<String>,
     tag: Option<String>,
     branch: Option<String>,
+    extras: Vec<ExtraName>,
+    package: Option<PackageName>,
     python: Option<String>,
     settings: ResolverInstallerSettings,
     toolchain_preference: ToolchainPreference,
@@ -43,11 +46,18 @@ pub(crate) async fn add(
     printer: Printer,
 ) -> Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv add` is experimental and may change without warning.");
+        warn_user_once!("`uv add` is experimental and may change without warning.");
     }
 
-    // Find the project requirements.
-    let project = ProjectWorkspace::discover(&std::env::current_dir()?, None).await?;
+    // Find the project in the workspace.
+    let project = if let Some(package) = package {
+        Workspace::discover(&std::env::current_dir()?, None)
+            .await?
+            .with_current_project(package.clone())
+            .with_context(|| format!("Package `{package}` not found in workspace"))?
+    } else {
+        ProjectWorkspace::discover(&std::env::current_dir()?, None).await?
+    };
 
     // Discover or create the virtual environment.
     let venv = project::init_environment(
@@ -115,18 +125,15 @@ pub(crate) async fn add(
         &index,
         &git,
         &in_flight,
+        settings.index_strategy,
         setup_py,
         &settings.config_setting,
         build_isolation,
         settings.link_mode,
         &settings.build_options,
+        settings.exclude_newer,
         concurrency,
         preview,
-    )
-    .with_options(
-        OptionsBuilder::new()
-            .exclude_newer(settings.exclude_newer)
-            .build(),
     );
 
     // Resolve any unnamed requirements.
@@ -142,13 +149,20 @@ pub(crate) async fn add(
 
     // Add the requirements to the `pyproject.toml`.
     let mut pyproject = PyProjectTomlMut::from_toml(project.current_project().pyproject_toml())?;
-    for req in requirements {
-        let (req, source) = if raw {
+    for mut req in requirements {
+        // Add the specified extras.
+        req.extras.extend(extras.iter().cloned());
+        req.extras.sort_unstable();
+        req.extras.dedup();
+
+        let (req, source) = if raw_sources {
             // Use the PEP 508 requirement directly.
             (pep508_rs::Requirement::from(req), None)
         } else {
             // Otherwise, try to construct the source.
+            let workspace = project.workspace().packages().contains_key(&req.name);
             let result = Source::from_requirement(
+                &req.name,
                 req.source.clone(),
                 workspace,
                 editable,
@@ -160,7 +174,7 @@ pub(crate) async fn add(
             let source = match result {
                 Ok(source) => source,
                 Err(SourceError::UnresolvedReference(rev)) => {
-                    anyhow::bail!("Cannot resolve Git reference `{rev}` for requirement `{}`. Specify the reference with one of `--tag`, `--branch`, or `--rev`, or use the `--raw` flag.", req.name)
+                    anyhow::bail!("Cannot resolve Git reference `{rev}` for requirement `{}`. Specify the reference with one of `--tag`, `--branch`, or `--rev`, or use the `--raw-sources` flag.", req.name)
                 }
                 Err(err) => return Err(err.into()),
             };
@@ -173,9 +187,9 @@ pub(crate) async fn add(
         };
 
         if dev {
-            pyproject.add_dev_dependency(&req, source.as_ref())?;
+            pyproject.add_dev_dependency(req, source)?;
         } else {
-            pyproject.add_dependency(&req, source.as_ref())?;
+            pyproject.add_dependency(req, source)?;
         }
     }
 
@@ -189,16 +203,7 @@ pub(crate) async fn add(
     let lock = project::lock::do_lock(
         project.workspace(),
         venv.interpreter(),
-        &settings.upgrade,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.resolution,
-        &settings.prerelease,
-        &settings.config_setting,
-        settings.exclude_newer.as_ref(),
-        &settings.link_mode,
-        &settings.build_options,
+        settings.as_ref().into(),
         preview,
         connectivity,
         concurrency,
@@ -221,14 +226,7 @@ pub(crate) async fn add(
         extras,
         dev,
         Modifications::Sufficient,
-        &settings.reinstall,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.config_setting,
-        &settings.link_mode,
-        &settings.compile_bytecode,
-        &settings.build_options,
+        settings.as_ref().into(),
         preview,
         connectivity,
         concurrency,

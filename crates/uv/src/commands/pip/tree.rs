@@ -43,7 +43,7 @@ pub(crate) fn pip_tree(
     );
 
     // Build the installed index.
-    let site_packages = SitePackages::from_executable(&environment)?;
+    let site_packages = SitePackages::from_environment(&environment)?;
 
     let rendered_tree = DisplayDependencyGraph::new(&site_packages, depth.into(), prune, no_dedupe)
         .render()
@@ -65,6 +65,9 @@ pub(crate) fn pip_tree(
             )?;
         }
     }
+    if rendered_tree.contains('#') {
+        writeln!(printer.stdout(), "{}", "(#) Dependency cycle".italic())?;
+    }
 
     // Validate that the environment is consistent.
     if strict {
@@ -80,7 +83,6 @@ pub(crate) fn pip_tree(
     }
     Ok(ExitStatus::Success)
 }
-
 #[derive(Debug)]
 struct DisplayDependencyGraph<'a> {
     site_packages: &'a SitePackages,
@@ -96,6 +98,7 @@ struct DisplayDependencyGraph<'a> {
 
     // Prune the given package from the display of the dependency tree.
     prune: Vec<PackageName>,
+
     // Whether to de-duplicate the displayed dependencies.
     no_dedupe: bool,
 }
@@ -143,10 +146,6 @@ impl<'a> DisplayDependencyGraph<'a> {
             return Vec::new();
         }
 
-        // Short-circuit if the current package is given in the prune list.
-        if self.prune.contains(installed_dist.name()) {
-            return Vec::new();
-        };
         let package_name = installed_dist.name().to_string();
         let is_visited = visited.contains(&package_name);
         let line = format!("{} v{}", package_name, installed_dist.version());
@@ -155,6 +154,20 @@ impl<'a> DisplayDependencyGraph<'a> {
         // 1. current path forms a dependency cycle, or
         // 2. the package has been visited and de-duplication is enabled (default),
         if path.contains(&package_name) || (is_visited && !self.no_dedupe) {
+            return Vec::new();
+        }
+
+        let package_name = installed_dist.name().to_string();
+        let is_visited = visited.contains(&package_name);
+        let line = format!("{} v{}", package_name, installed_dist.version());
+
+        if path.contains(&package_name) {
+            return vec![format!("{} (#)", line)];
+        }
+
+        // If the package has been visited and de-duplication is enabled (default),
+        // skip the traversal.
+        if is_visited && !self.no_dedupe {
             return vec![format!("{} (*)", line)];
         }
 

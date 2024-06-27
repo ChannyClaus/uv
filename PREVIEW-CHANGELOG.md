@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.2.17
+
+### Preview features
+
+- Add `--extra` to `uv add` and enable fine grained updates ([#4566](https://github.com/astral-sh/uv/pull/4566))
+
+## 0.2.16
+
+### Preview features
+
+- Add `--package` argument to `uv add` and `uv remove` ([#4556](https://github.com/astral-sh/uv/pull/4556))
+- Add `uv tool install` ([#4492](https://github.com/astral-sh/uv/pull/4492))
+- Fallback to interpreter discovery in `uv run` ([#4549](https://github.com/astral-sh/uv/pull/4549))
+- Make `uv.sources` without `--preview` non-fatal ([#4558](https://github.com/astral-sh/uv/pull/4558))
+- Remove non-existent extras from lockfile ([#4479](https://github.com/astral-sh/uv/pull/4479))
+- Support conflicting URL in separate forks ([#4435](https://github.com/astral-sh/uv/pull/4435))
+- Automatically detect workspace packages in `uv add` ([#4557](https://github.com/astral-sh/uv/pull/4557))
+- Omit `distribution.sdist` from lockfile when it is redundant ([#4528](https://github.com/astral-sh/uv/pull/4528))
+- Remove `source` and `version` from lock file when unambiguous ([#4513](https://github.com/astral-sh/uv/pull/4513))
+- Allow `uv lock` to read overrides from `tool.uv` (#4108) ([#4369](https://github.com/astral-sh/uv/pull/4369))
+
+## 0.2.15
+
+<!-- No changes -->
+
+## 0.2.14
+
+### Preview features
+
+- Expose `toolchain-preference` as a CLI and configuration file option ([#4424](https://github.com/astral-sh/uv/pull/4424))
+- Improve handling of command arguments in `uv run` and `uv tool run` ([#4404](https://github.com/astral-sh/uv/pull/4404))
+- Add `tool.uv.sources` support for `uv add` ([#4406](https://github.com/astral-sh/uv/pull/4406))
+- Use correct lock path for workspace dependencies ([#4421](https://github.com/astral-sh/uv/pull/4421))
+- Filter out sibling dependencies in resolver forks ([#4415](https://github.com/astral-sh/uv/pull/4415))
+
 ## 0.2.13
 
 ### Preview features
@@ -126,7 +161,6 @@
 
 <!-- No changes -->
 
-
 ## 0.2.3
 
 ### Preview features
@@ -136,7 +170,6 @@
 ## 0.2.2
 
 <!-- No changes -->
-
 
 ## 0.2.1
 
@@ -174,7 +207,6 @@
 
 <!-- No changes -->
 
-
 ## 0.1.43
 
 ### Preview features
@@ -195,7 +227,6 @@
 ## 0.1.41
 
 <!-- No changes -->
-
 
 ## 0.1.40
 

@@ -60,7 +60,8 @@ fn fork_allows_non_conflicting_non_overlapping_dependencies() -> Result<()> {
         "###
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -101,7 +102,6 @@ fn fork_allows_non_conflicting_non_overlapping_dependencies() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -170,7 +170,8 @@ fn fork_allows_non_conflicting_repeated_dependencies() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -204,12 +205,9 @@ fn fork_allows_non_conflicting_repeated_dependencies() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         "###
         );
     });
@@ -255,7 +253,8 @@ fn fork_basic() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -296,7 +295,6 @@ fn fork_basic() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -359,7 +357,8 @@ fn fork_conflict_unsatisfiable() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -440,7 +439,8 @@ fn fork_filter_sibling_dependencies() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -519,7 +519,6 @@ fn fork_filter_sibling_dependencies() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -535,14 +534,10 @@ fn fork_filter_sibling_dependencies() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'linux'"
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'darwin'"
         "###
         );
@@ -599,7 +594,8 @@ fn fork_marker_accrue() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -631,8 +627,6 @@ fn fork_marker_accrue() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'linux'"
 
         [[distribution]]
@@ -644,8 +638,6 @@ fn fork_marker_accrue() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'darwin'"
 
         [[distribution]]
@@ -659,18 +651,13 @@ fn fork_marker_accrue() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "implementation_name == 'cpython'"
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "implementation_name == 'pypy'"
         "###
         );
@@ -724,7 +711,8 @@ fn fork_marker_disjoint() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -795,7 +783,8 @@ fn fork_marker_inherit_combined_allowed() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -853,8 +842,6 @@ fn fork_marker_inherit_combined_allowed() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "implementation_name == 'pypy' or sys_platform == 'linux'"
 
         [[distribution]]
@@ -875,7 +862,6 @@ fn fork_marker_inherit_combined_allowed() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -948,7 +934,8 @@ fn fork_marker_inherit_combined_disallowed() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1015,7 +1002,6 @@ fn fork_marker_inherit_combined_disallowed() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1089,7 +1075,8 @@ fn fork_marker_inherit_combined() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1156,7 +1143,6 @@ fn fork_marker_inherit_combined() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1224,7 +1210,8 @@ fn fork_marker_inherit_isolated() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1263,8 +1250,6 @@ fn fork_marker_inherit_isolated() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'linux'"
 
         [[distribution]]
@@ -1278,7 +1263,6 @@ fn fork_marker_inherit_isolated() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1351,7 +1335,8 @@ fn fork_marker_inherit_transitive() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1383,8 +1368,6 @@ fn fork_marker_inherit_transitive() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
 
         [[distribution]]
         name = "package-a"
@@ -1402,8 +1385,6 @@ fn fork_marker_inherit_transitive() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
 
         [[distribution]]
         name = "package-c"
@@ -1416,7 +1397,6 @@ fn fork_marker_inherit_transitive() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1484,7 +1464,8 @@ fn fork_marker_inherit() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1525,7 +1506,6 @@ fn fork_marker_inherit() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1598,7 +1578,8 @@ fn fork_marker_limited_inherit() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1644,8 +1625,6 @@ fn fork_marker_limited_inherit() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'linux'"
 
         [[distribution]]
@@ -1659,7 +1638,6 @@ fn fork_marker_limited_inherit() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1675,8 +1653,6 @@ fn fork_marker_limited_inherit() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         "###
         );
     });
@@ -1734,7 +1710,8 @@ fn fork_marker_selection() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1794,7 +1771,6 @@ fn fork_marker_selection() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -1885,7 +1861,8 @@ fn fork_marker_track() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -1917,8 +1894,6 @@ fn fork_marker_track() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "1.10"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "implementation_name == 'iron'"
 
         [[distribution]]
@@ -1958,7 +1933,6 @@ fn fork_marker_track() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
@@ -2035,7 +2009,8 @@ fn fork_non_fork_marker_transitive() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2067,8 +2042,6 @@ fn fork_non_fork_marker_transitive() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "2.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'linux'"
 
         [[distribution]]
@@ -2080,8 +2053,6 @@ fn fork_non_fork_marker_transitive() -> Result<()> {
 
         [[distribution.dependencies]]
         name = "package-c"
-        version = "2.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "sys_platform == 'darwin'"
 
         [[distribution]]
@@ -2095,17 +2066,12 @@ fn fork_non_fork_marker_transitive() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
 
         [[distribution.dependencies]]
         name = "package-b"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         "###
         );
     });
@@ -2161,7 +2127,8 @@ fn fork_non_local_fork_marker_direct() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2235,7 +2202,8 @@ fn fork_non_local_fork_marker_transitive() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2295,7 +2263,8 @@ fn fork_requires_python_full_prerelease() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2322,7 +2291,6 @@ fn fork_requires_python_full_prerelease() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
         "###
         );
     });
@@ -2367,7 +2335,8 @@ fn fork_requires_python_full() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2394,7 +2363,6 @@ fn fork_requires_python_full() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
         "###
         );
     });
@@ -2442,7 +2410,8 @@ fn fork_requires_python_patch_overlap() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2476,12 +2445,9 @@ fn fork_requires_python_patch_overlap() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
 
         [[distribution.dependencies]]
         name = "package-a"
-        version = "1.0.0"
-        source = "registry+https://astral-sh.github.io/packse/0.3.29/simple-html/"
         marker = "python_version == '3.10'"
         "###
         );
@@ -2525,7 +2491,8 @@ fn fork_requires_python() -> Result<()> {
         "###,
     )?;
 
-    let mut cmd = context.lock_without_exclude_newer();
+    let mut cmd = context.lock();
+    cmd.env_remove("UV_EXCLUDE_NEWER");
     cmd.arg("--index-url")
         .arg("https://astral-sh.github.io/packse/0.3.29/simple-html/");
     uv_snapshot!(filters, cmd, @r###"
@@ -2552,7 +2519,6 @@ fn fork_requires_python() -> Result<()> {
         name = "project"
         version = "0.1.0"
         source = "editable+."
-        sdist = { path = "." }
         "###
         );
     });

@@ -5,30 +5,14 @@ use assert_fs::fixture::PathChild;
 
 use common::uv_snapshot;
 
-use crate::common::{get_bin, TestContext, EXCLUDE_NEWER};
+use crate::common::{get_bin, TestContext};
 
 mod common;
 
-/// Create a `pip install` command with options shared across scenarios.
-fn install_command(context: &TestContext) -> Command {
+fn tree_command(context: &TestContext) -> Command {
     let mut command = Command::new(get_bin());
-    command
-        .arg("pip")
-        .arg("install")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .arg("--exclude-newer")
-        .arg(EXCLUDE_NEWER)
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir);
-
-    if cfg!(all(windows, debug_assertions)) {
-        // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-        // default windows stack of 1MB
-        command.env("UV_STACK_SIZE", (2 * 1024 * 1024).to_string());
-    }
-
+    command.arg("pip").arg("tree");
+    context.add_shared_args(&mut command);
     command
 }
 
@@ -36,14 +20,7 @@ fn install_command(context: &TestContext) -> Command {
 fn no_package() {
     let context = TestContext::new("3.12");
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -61,7 +38,8 @@ fn single_package() {
     let requirements_txt = context.temp_dir.child("requirements.txt");
     requirements_txt.write_str("requests==2.31.0").unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -82,14 +60,7 @@ fn single_package() {
     );
 
     context.assert_command("import requests").success();
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -113,7 +84,8 @@ fn nested_dependencies() {
         .write_str("scikit-learn==1.4.1.post1")
         .unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -133,14 +105,7 @@ fn nested_dependencies() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -365,7 +330,8 @@ fn nested_dependencies_more_complex() {
     let requirements_txt = context.temp_dir.child("requirements.txt");
     requirements_txt.write_str("packse").unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -412,14 +378,7 @@ fn nested_dependencies_more_complex() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -586,30 +545,19 @@ fn cyclic_dependency() {
         .write_str("uv-cyclic-dependencies-c")
         .unwrap();
 
-    let mut command = Command::new(get_bin());
+    let mut command = context.pip_install();
+    command.env_remove("UV_EXCLUDE_NEWER");
     command
-        .arg("pip")
-        .arg("install")
         .arg("-r")
         .arg("requirements.txt")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
         .arg("--index-url")
-        .arg("https://test.pypi.org/simple/")
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir);
-    if cfg!(all(windows, debug_assertions)) {
-        // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-        // default windows stack of 1MB
-        command.env("UV_STACK_SIZE", (2 * 1024 * 1024).to_string());
-    }
+        .arg("https://test.pypi.org/simple/");
 
     uv_snapshot!(context.filters(), command, @r###"
     success: true
     exit_code: 0
     ----- stdout -----
-    
+
     ----- stderr -----
     Resolved 3 packages in [TIME]
     Prepared 3 packages in [TIME]
@@ -620,22 +568,15 @@ fn cyclic_dependency() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-    .arg("pip")
-    .arg("tree")
-    .arg("--cache-dir")
-    .arg(context.cache_dir.path())
-    .env("VIRTUAL_ENV", context.venv.as_os_str())
-    .env("UV_NO_WRAP", "1")
-    .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
     uv-cyclic-dependencies-c v0.1.0
     └── uv-cyclic-dependencies-a v0.1.0
         └── uv-cyclic-dependencies-b v0.1.0
-            └── uv-cyclic-dependencies-a v0.1.0 (*)
-    (*) Package tree already displayed
+            └── uv-cyclic-dependencies-a v0.1.0 (#)
+    (#) Dependency cycle
 
     ----- stderr -----
     "###
@@ -650,7 +591,8 @@ fn removed_dependency() {
     let requirements_txt = context.temp_dir.child("requirements.txt");
     requirements_txt.write_str("requests==2.31.0").unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -670,15 +612,9 @@ fn removed_dependency() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("uninstall")
-        .arg("requests")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), context
+        .pip_uninstall()
+        .arg("requests"), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -689,14 +625,7 @@ fn removed_dependency() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -724,7 +653,8 @@ fn multiple_packages() {
         )
         .unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -750,14 +680,7 @@ fn multiple_packages() {
         filters.push(("colorama v0.4.6\n", ""));
     }
     context.assert_command("import requests").success();
-    uv_snapshot!(filters, Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(filters, tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -789,7 +712,8 @@ fn multiple_packages_shared_descendant() {
         )
         .unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -815,14 +739,7 @@ fn multiple_packages_shared_descendant() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -864,7 +781,8 @@ fn no_dedupe_and_cycle() {
         )
         .unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -890,23 +808,12 @@ fn no_dedupe_and_cycle() {
     "###
     );
 
-    let mut command = Command::new(get_bin());
+    let mut command = context.pip_install();
+    command.env_remove("UV_EXCLUDE_NEWER");
     command
-        .arg("pip")
-        .arg("install")
         .arg("uv-cyclic-dependencies-c==0.1.0")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
         .arg("--index-url")
-        .arg("https://test.pypi.org/simple/")
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir);
-    if cfg!(all(windows, debug_assertions)) {
-        // TODO(konstin): Reduce stack usage in debug mode enough that the tests pass with the
-        // default windows stack of 1MB
-        command.env("UV_STACK_SIZE", (2 * 1024 * 1024).to_string());
-    }
+        .arg("https://test.pypi.org/simple/");
 
     uv_snapshot!(context.filters(), command, @r###"
     success: true
@@ -923,15 +830,8 @@ fn no_dedupe_and_cycle() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .arg("--no-dedupe")
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context)
+        .arg("--no-dedupe"), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -957,8 +857,8 @@ fn no_dedupe_and_cycle() {
     uv-cyclic-dependencies-c v0.1.0
     └── uv-cyclic-dependencies-a v0.1.0
         └── uv-cyclic-dependencies-b v0.1.0
-            └── uv-cyclic-dependencies-a v0.1.0 (*)
-    (*) Package tree is a cycle and cannot be shown
+            └── uv-cyclic-dependencies-a v0.1.0 (#)
+    (#) Dependency cycle
 
     ----- stderr -----
     "###
@@ -980,7 +880,8 @@ fn no_dedupe() {
         )
         .unwrap();
 
-    uv_snapshot!(install_command(&context)
+    uv_snapshot!(context
+        .pip_install()
         .arg("-r")
         .arg("requirements.txt")
         .arg("--strict"), @r###"
@@ -1006,15 +907,8 @@ fn no_dedupe() {
     "###
     );
 
-    uv_snapshot!(context.filters(), Command::new(get_bin())
-        .arg("pip")
-        .arg("tree")
-        .arg("--cache-dir")
-        .arg(context.cache_dir.path())
-        .arg("--no-dedupe")
-        .env("VIRTUAL_ENV", context.venv.as_os_str())
-        .env("UV_NO_WRAP", "1")
-        .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(context.filters(), tree_command(&context)
+        .arg("--no-dedupe"), @r###"
     success: true
     exit_code: 0
     ----- stdout -----
@@ -1048,7 +942,8 @@ fn with_editable() {
     let context = TestContext::new("3.12");
 
     // Install the editable package.
-    uv_snapshot!(context.filters(), install_command(&context)
+    uv_snapshot!(context.filters(), context
+        .pip_install()
         .arg("-e")
         .arg(context.workspace_root.join("scripts/packages/hatchling_editable")), @r###"
     success: true
@@ -1070,14 +965,7 @@ fn with_editable() {
         .chain(vec![(r"\-\-\-\-\-\-+.*", "[UNDERLINE]"), ("  +", " ")])
         .collect::<Vec<_>>();
 
-    uv_snapshot!(filters, Command::new(get_bin())
-    .arg("pip")
-    .arg("tree")
-    .arg("--cache-dir")
-    .arg(context.cache_dir.path())
-    .env("VIRTUAL_ENV", context.venv.as_os_str())
-    .env("UV_NO_WRAP", "1")
-    .current_dir(&context.temp_dir), @r###"
+    uv_snapshot!(filters, tree_command(&context), @r###"
     success: true
     exit_code: 0
     ----- stdout -----

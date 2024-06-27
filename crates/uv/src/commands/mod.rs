@@ -9,7 +9,7 @@ pub(crate) use cache_dir::cache_dir;
 pub(crate) use cache_prune::cache_prune;
 use distribution_types::InstalledMetadata;
 pub(crate) use pip::check::pip_check;
-pub(crate) use pip::compile::{extra_name_with_clap_error, pip_compile};
+pub(crate) use pip::compile::pip_compile;
 pub(crate) use pip::freeze::pip_freeze;
 pub(crate) use pip::install::pip_install;
 pub(crate) use pip::list::pip_list;
@@ -24,6 +24,7 @@ pub(crate) use project::run::run;
 pub(crate) use project::sync::sync;
 #[cfg(feature = "self-update")]
 pub(crate) use self_update::self_update;
+pub(crate) use tool::install::install as tool_install;
 pub(crate) use tool::run::run as run_tool;
 pub(crate) use toolchain::find::find as toolchain_find;
 pub(crate) use toolchain::install::install as toolchain_install;
@@ -109,24 +110,6 @@ pub(super) struct DryRunEvent<T: Display> {
     name: PackageName,
     version: T,
     kind: ChangeEventKind,
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub(crate) enum VersionFormat {
-    Text,
-    Json,
-}
-
-#[derive(Debug, Default, Clone, clap::ValueEnum)]
-pub(crate) enum ListFormat {
-    /// Display the list of packages in a human-readable table.
-    #[default]
-    Columns,
-    /// Display the list of packages in a `pip freeze`-like format, with one package per line
-    /// alongside its version.
-    Freeze,
-    /// Display the list of packages in a machine-readable JSON format.
-    Json,
 }
 
 /// Compile all Python source files in site-packages to bytecode, to speed up the

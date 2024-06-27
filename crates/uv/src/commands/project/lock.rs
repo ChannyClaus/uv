@@ -2,30 +2,25 @@ use std::collections::Bound;
 
 use anstream::eprint;
 
-use distribution_types::{IndexLocations, UnresolvedRequirementSpecification};
-use install_wheel_rs::linker::LinkMode;
+use distribution_types::UnresolvedRequirementSpecification;
 use uv_cache::Cache;
 use uv_client::{Connectivity, FlatIndexClient, RegistryClientBuilder};
-use uv_configuration::{
-    BuildOptions, Concurrency, ConfigSettings, ExtrasSpecification, IndexStrategy,
-    KeyringProviderType, PreviewMode, Reinstall, SetupPyStrategy, Upgrade,
-};
+use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode, Reinstall, SetupPyStrategy};
 use uv_dispatch::BuildDispatch;
 use uv_distribution::{Workspace, DEV_DEPENDENCIES};
 use uv_git::GitResolver;
 use uv_requirements::upgrade::{read_lockfile, LockedRequirements};
 use uv_resolver::{
-    ExcludeNewer, FlatIndex, InMemoryIndex, Lock, OptionsBuilder, PreReleaseMode, RequiresPython,
-    ResolutionMode,
+    FlatIndex, InMemoryIndex, Lock, OptionsBuilder, PythonRequirement, RequiresPython,
 };
 use uv_toolchain::{Interpreter, ToolchainPreference, ToolchainRequest};
 use uv_types::{BuildIsolation, EmptyInstalledPackages, HashStrategy, InFlight};
-use uv_warnings::warn_user;
+use uv_warnings::{warn_user, warn_user_once};
 
 use crate::commands::project::{find_requires_python, ProjectError};
 use crate::commands::{pip, project, ExitStatus};
 use crate::printer::Printer;
-use crate::settings::ResolverSettings;
+use crate::settings::{ResolverSettings, ResolverSettingsRef};
 
 /// Resolve the project requirements into a lockfile.
 #[allow(clippy::too_many_arguments)]
@@ -41,7 +36,7 @@ pub(crate) async fn lock(
     printer: Printer,
 ) -> anyhow::Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv lock` is experimental and may change without warning.");
+        warn_user_once!("`uv lock` is experimental and may change without warning.");
     }
 
     // Find the project requirements.
@@ -63,16 +58,7 @@ pub(crate) async fn lock(
     match do_lock(
         &workspace,
         &interpreter,
-        &settings.upgrade,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.resolution,
-        &settings.prerelease,
-        &settings.config_setting,
-        settings.exclude_newer.as_ref(),
-        &settings.link_mode,
-        &settings.build_options,
+        settings.as_ref(),
         preview,
         connectivity,
         concurrency,
@@ -100,16 +86,7 @@ pub(crate) async fn lock(
 pub(super) async fn do_lock(
     workspace: &Workspace,
     interpreter: &Interpreter,
-    upgrade: &Upgrade,
-    index_locations: &IndexLocations,
-    index_strategy: &IndexStrategy,
-    keyring_provider: &KeyringProviderType,
-    resolution: &ResolutionMode,
-    prerelease: &PreReleaseMode,
-    config_setting: &ConfigSettings,
-    exclude_newer: Option<&ExcludeNewer>,
-    link_mode: &LinkMode,
-    build_options: &BuildOptions,
+    settings: ResolverSettingsRef<'_>,
     preview: PreviewMode,
     connectivity: Connectivity,
     concurrency: Concurrency,
@@ -117,16 +94,33 @@ pub(super) async fn do_lock(
     cache: &Cache,
     printer: Printer,
 ) -> Result<Lock, ProjectError> {
+    // Extract the project settings.
+    let ResolverSettingsRef {
+        index_locations,
+        index_strategy,
+        keyring_provider,
+        resolution,
+        prerelease,
+        config_setting,
+        exclude_newer,
+        link_mode,
+        upgrade,
+        build_options,
+    } = settings;
+
     // When locking, include the project itself (as editable).
     let requirements = workspace
         .members_as_requirements()
         .into_iter()
         .map(UnresolvedRequirementSpecification::from)
         .collect();
+    let overrides = workspace
+        .overrides()
+        .into_iter()
+        .map(UnresolvedRequirementSpecification::from)
+        .collect();
     let constraints = vec![];
-    let overrides = vec![];
     let dev = vec![DEV_DEPENDENCIES.clone()];
-
     let source_trees = vec![];
 
     // Determine the supported Python range. If no range is defined, and warn and default to the
@@ -147,22 +141,24 @@ pub(super) async fn do_lock(
         default
     };
 
+    let python_requirement = PythonRequirement::from_requires_python(interpreter, &requires_python);
+
     // Initialize the registry client.
     let client = RegistryClientBuilder::new(cache.clone())
         .native_tls(native_tls)
         .connectivity(connectivity)
         .index_urls(index_locations.index_urls())
-        .index_strategy(*index_strategy)
-        .keyring(*keyring_provider)
+        .index_strategy(index_strategy)
+        .keyring(keyring_provider)
         .markers(interpreter.markers())
         .platform(interpreter.platform())
         .build();
 
     let options = OptionsBuilder::new()
-        .resolution_mode(*resolution)
-        .prerelease_mode(*prerelease)
-        .exclude_newer(exclude_newer.copied())
-        .index_strategy(*index_strategy)
+        .resolution_mode(resolution)
+        .prerelease_mode(prerelease)
+        .exclude_newer(exclude_newer)
+        .index_strategy(index_strategy)
         .build();
     let hasher = HashStrategy::Generate;
 
@@ -199,11 +195,13 @@ pub(super) async fn do_lock(
         &index,
         &git,
         &in_flight,
+        index_strategy,
         setup_py,
         config_setting,
         build_isolation,
-        *link_mode,
+        link_mode,
         build_options,
+        exclude_newer,
         concurrency,
         preview,
     );
@@ -222,10 +220,9 @@ pub(super) async fn do_lock(
         &hasher,
         &Reinstall::default(),
         upgrade,
-        interpreter,
         None,
         None,
-        Some(&requires_python),
+        python_requirement,
         &client,
         &flat_index,
         &index,

@@ -9,23 +9,23 @@ use anyhow::Result;
 use clap::error::{ContextKind, ContextValue};
 use clap::{CommandFactory, Parser};
 use owo_colors::OwoColorize;
-use settings::PipTreeSettings;
 use tracing::{debug, instrument};
 
-use cli::{ToolCommand, ToolNamespace, ToolchainCommand, ToolchainNamespace};
+use settings::PipTreeSettings;
 use uv_cache::Cache;
+use uv_cli::{
+    compat::CompatArgs, CacheCommand, CacheNamespace, Cli, Commands, PipCommand, PipNamespace,
+    ProjectCommand,
+};
+#[cfg(feature = "self-update")]
+use uv_cli::{SelfCommand, SelfNamespace};
+use uv_cli::{ToolCommand, ToolNamespace, ToolchainCommand, ToolchainNamespace};
 use uv_configuration::Concurrency;
 use uv_distribution::Workspace;
 use uv_requirements::RequirementsSource;
 use uv_settings::Combine;
 
-use crate::cli::{
-    CacheCommand, CacheNamespace, Cli, Commands, PipCommand, PipNamespace, ProjectCommand,
-};
-#[cfg(feature = "self-update")]
-use crate::cli::{SelfCommand, SelfNamespace};
 use crate::commands::ExitStatus;
-use crate::compat::CompatArgs;
 use crate::settings::{
     CacheSettings, GlobalSettings, PipCheckSettings, PipCompileSettings, PipFreezeSettings,
     PipInstallSettings, PipListSettings, PipShowSettings, PipSyncSettings, PipUninstallSettings,
@@ -47,9 +47,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-mod cli;
 mod commands;
-mod compat;
 mod logging;
 mod printer;
 mod settings;
@@ -265,11 +263,13 @@ async fn run() -> Result<ExitStatus> {
                 args.settings.generate_hashes,
                 args.settings.no_emit_package,
                 args.settings.no_strip_extras,
+                args.settings.no_strip_markers,
                 !args.settings.no_annotate,
                 !args.settings.no_header,
                 args.settings.custom_compile_command,
                 args.settings.emit_index_url,
                 args.settings.emit_find_links,
+                args.settings.emit_build_options,
                 args.settings.emit_marker_expression,
                 args.settings.emit_index_annotation,
                 args.settings.index_locations,
@@ -282,6 +282,7 @@ async fn run() -> Result<ExitStatus> {
                 args.settings.build_options,
                 args.settings.python_version,
                 args.settings.python_platform,
+                args.settings.universal,
                 args.settings.exclude_newer,
                 args.settings.annotation_style,
                 args.settings.link_mode,
@@ -720,13 +721,14 @@ async fn run() -> Result<ExitStatus> {
 
             commands::add(
                 args.requirements,
-                args.workspace,
                 args.dev,
                 args.editable,
-                args.raw,
+                args.raw_sources,
                 args.rev,
                 args.tag,
                 args.branch,
+                args.extras,
+                args.package,
                 args.python,
                 args.settings,
                 globals.toolchain_preference,
@@ -750,6 +752,7 @@ async fn run() -> Result<ExitStatus> {
             commands::remove(
                 args.requirements,
                 args.dev,
+                args.package,
                 args.python,
                 globals.toolchain_preference,
                 globals.preview,
@@ -790,6 +793,33 @@ async fn run() -> Result<ExitStatus> {
                 args.with,
                 args.settings,
                 globals.isolated,
+                globals.preview,
+                globals.toolchain_preference,
+                globals.connectivity,
+                Concurrency::default(),
+                globals.native_tls,
+                &cache,
+                printer,
+            )
+            .await
+        }
+        Commands::Tool(ToolNamespace {
+            command: ToolCommand::Install(args),
+        }) => {
+            // Resolve the settings from the command-line arguments and workspace configuration.
+            let args = settings::ToolInstallSettings::resolve(args, filesystem);
+            show_settings!(args);
+
+            // Initialize the cache.
+            let cache = cache.init()?.with_refresh(args.refresh);
+
+            commands::tool_install(
+                args.name,
+                args.python,
+                args.from,
+                args.with,
+                args.force,
+                args.settings,
                 globals.preview,
                 globals.toolchain_preference,
                 globals.connectivity,

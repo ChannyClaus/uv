@@ -16,7 +16,7 @@ use uv_fs::Simplified;
 use uv_git::GitResolver;
 use uv_installer::{SatisfiesResult, SitePackages};
 use uv_requirements::{RequirementsSource, RequirementsSpecification};
-use uv_resolver::{FlatIndex, InMemoryIndex, OptionsBuilder, RequiresPython};
+use uv_resolver::{FlatIndex, InMemoryIndex, OptionsBuilder, PythonRequirement, RequiresPython};
 use uv_toolchain::{
     request_from_version_file, EnvironmentPreference, Interpreter, PythonEnvironment, Toolchain,
     ToolchainPreference, ToolchainRequest, VersionRequest,
@@ -318,8 +318,8 @@ pub(crate) async fn update_environment(
         RequirementsSpecification::from_sources(requirements, &[], &[], &client_builder).await?;
 
     // Check if the current environment satisfies the requirements
-    let site_packages = SitePackages::from_executable(&venv)?;
-    if spec.source_trees.is_empty() {
+    let site_packages = SitePackages::from_environment(&venv)?;
+    if spec.source_trees.is_empty() && reinstall.is_none() {
         match site_packages.satisfies(&spec.requirements, &spec.constraints)? {
             // If the requirements are already satisfied, we're done.
             SatisfiesResult::Fresh {
@@ -345,6 +345,7 @@ pub(crate) async fn update_environment(
     let interpreter = venv.interpreter();
     let tags = venv.interpreter().tags()?;
     let markers = venv.interpreter().markers();
+    let python_requirement = PythonRequirement::from_interpreter(interpreter);
 
     // Initialize the registry client.
     let client = RegistryClientBuilder::new(cache.clone())
@@ -396,11 +397,13 @@ pub(crate) async fn update_environment(
         &index,
         &git,
         &in_flight,
+        *index_strategy,
         setup_py,
         config_setting,
         build_isolation,
         *link_mode,
         build_options,
+        *exclude_newer,
         concurrency,
         preview,
     );
@@ -419,10 +422,9 @@ pub(crate) async fn update_environment(
         &hasher,
         reinstall,
         upgrade,
-        interpreter,
         Some(tags),
         Some(markers),
-        None,
+        python_requirement,
         &client,
         &flat_index,
         &index,
@@ -455,11 +457,13 @@ pub(crate) async fn update_environment(
             &index,
             &git,
             &in_flight,
+            *index_strategy,
             setup_py,
             config_setting,
             build_isolation,
             *link_mode,
             build_options,
+            *exclude_newer,
             concurrency,
             preview,
         )

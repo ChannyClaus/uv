@@ -2,14 +2,9 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use distribution_types::IndexLocations;
-use install_wheel_rs::linker::LinkMode;
 use uv_cache::Cache;
 use uv_client::{Connectivity, FlatIndexClient, RegistryClientBuilder};
-use uv_configuration::{
-    BuildOptions, Concurrency, ConfigSettings, ExtrasSpecification, IndexStrategy,
-    KeyringProviderType, PreviewMode, Reinstall, SetupPyStrategy,
-};
+use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode, SetupPyStrategy};
 use uv_dispatch::BuildDispatch;
 use uv_distribution::{ProjectWorkspace, DEV_DEPENDENCIES};
 use uv_git::GitResolver;
@@ -18,13 +13,13 @@ use uv_normalize::PackageName;
 use uv_resolver::{FlatIndex, InMemoryIndex, Lock};
 use uv_toolchain::{PythonEnvironment, ToolchainPreference, ToolchainRequest};
 use uv_types::{BuildIsolation, HashStrategy, InFlight};
-use uv_warnings::warn_user;
+use uv_warnings::warn_user_once;
 
 use crate::commands::pip::operations::Modifications;
 use crate::commands::project::ProjectError;
 use crate::commands::{pip, project, ExitStatus};
 use crate::printer::Printer;
-use crate::settings::InstallerSettings;
+use crate::settings::{InstallerSettings, InstallerSettingsRef};
 
 /// Sync the project environment.
 #[allow(clippy::too_many_arguments)]
@@ -43,7 +38,7 @@ pub(crate) async fn sync(
     printer: Printer,
 ) -> Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv sync` is experimental and may change without warning.");
+        warn_user_once!("`uv sync` is experimental and may change without warning.");
     }
 
     // Find the project requirements.
@@ -77,14 +72,7 @@ pub(crate) async fn sync(
         extras,
         dev,
         modifications,
-        &settings.reinstall,
-        &settings.index_locations,
-        &settings.index_strategy,
-        &settings.keyring_provider,
-        &settings.config_setting,
-        &settings.link_mode,
-        &settings.compile_bytecode,
-        &settings.build_options,
+        settings.as_ref(),
         preview,
         connectivity,
         concurrency,
@@ -107,14 +95,7 @@ pub(super) async fn do_sync(
     extras: ExtrasSpecification,
     dev: bool,
     modifications: Modifications,
-    reinstall: &Reinstall,
-    index_locations: &IndexLocations,
-    index_strategy: &IndexStrategy,
-    keyring_provider: &KeyringProviderType,
-    config_setting: &ConfigSettings,
-    link_mode: &LinkMode,
-    compile_bytecode: &bool,
-    build_options: &BuildOptions,
+    settings: InstallerSettingsRef<'_>,
     preview: PreviewMode,
     connectivity: Connectivity,
     concurrency: Concurrency,
@@ -122,6 +103,18 @@ pub(super) async fn do_sync(
     cache: &Cache,
     printer: Printer,
 ) -> Result<(), ProjectError> {
+    // Extract the project settings.
+    let InstallerSettingsRef {
+        index_locations,
+        index_strategy,
+        keyring_provider,
+        config_setting,
+        link_mode,
+        compile_bytecode,
+        reinstall,
+        build_options,
+    } = settings;
+
     // Validate that the Python version is supported by the lockfile.
     if let Some(requires_python) = lock.requires_python() {
         if !requires_python.contains(venv.interpreter().python_version()) {
@@ -151,8 +144,8 @@ pub(super) async fn do_sync(
         .native_tls(native_tls)
         .connectivity(connectivity)
         .index_urls(index_locations.index_urls())
-        .index_strategy(*index_strategy)
-        .keyring(*keyring_provider)
+        .index_strategy(index_strategy)
+        .keyring(keyring_provider)
         .markers(markers)
         .platform(venv.interpreter().platform())
         .build();
@@ -166,6 +159,7 @@ pub(super) async fn do_sync(
     // optional on the downstream APIs.
     let build_isolation = BuildIsolation::default();
     let dry_run = false;
+    let exclude_newer = None;
     let hasher = HashStrategy::default();
     let setup_py = SetupPyStrategy::default();
 
@@ -186,16 +180,18 @@ pub(super) async fn do_sync(
         &index,
         &git,
         &in_flight,
+        index_strategy,
         setup_py,
         config_setting,
         build_isolation,
-        *link_mode,
+        link_mode,
         build_options,
+        exclude_newer,
         concurrency,
         preview,
     );
 
-    let site_packages = SitePackages::from_executable(venv)?;
+    let site_packages = SitePackages::from_environment(venv)?;
 
     // Sync the environment.
     pip::operations::install(
@@ -204,8 +200,8 @@ pub(super) async fn do_sync(
         modifications,
         reinstall,
         build_options,
-        *link_mode,
-        *compile_bytecode,
+        link_mode,
+        compile_bytecode,
         index_locations,
         &hasher,
         tags,

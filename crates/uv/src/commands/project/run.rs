@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -7,17 +8,18 @@ use tokio::process::Command;
 use tracing::debug;
 
 use uv_cache::Cache;
+use uv_cli::ExternalCommand;
 use uv_client::{BaseClientBuilder, Connectivity};
 use uv_configuration::{Concurrency, ExtrasSpecification, PreviewMode};
-use uv_distribution::{ProjectWorkspace, Workspace};
+use uv_distribution::{ProjectWorkspace, Workspace, WorkspaceError};
 use uv_normalize::PackageName;
 use uv_requirements::RequirementsSource;
 use uv_toolchain::{
-    EnvironmentPreference, PythonEnvironment, Toolchain, ToolchainPreference, ToolchainRequest,
+    EnvironmentPreference, Interpreter, PythonEnvironment, Toolchain, ToolchainPreference,
+    ToolchainRequest,
 };
-use uv_warnings::warn_user;
+use uv_warnings::warn_user_once;
 
-use crate::cli::ExternalCommand;
 use crate::commands::pip::operations::Modifications;
 use crate::commands::{project, ExitStatus};
 use crate::printer::Printer;
@@ -43,86 +45,111 @@ pub(crate) async fn run(
     printer: Printer,
 ) -> Result<ExitStatus> {
     if preview.is_disabled() {
-        warn_user!("`uv run` is experimental and may change without warning.");
+        warn_user_once!("`uv run` is experimental and may change without warning.");
     }
 
-    // Discover and sync the project.
-    let project_env = if isolated {
+    // Discover and sync the base environment.
+    let base_interpreter = if isolated {
         // package is `None`, isolated and package are marked as conflicting in clap.
         None
     } else {
-        debug!("Syncing project environment.");
-
         let project = if let Some(package) = package {
             // We need a workspace, but we don't need to have a current package, we can be e.g. in
             // the root of a virtual workspace and then switch into the selected package.
-            Workspace::discover(&std::env::current_dir()?, None)
-                .await?
-                .with_current_project(package.clone())
-                .with_context(|| format!("Package `{package}` not found in workspace"))?
+            Some(
+                Workspace::discover(&std::env::current_dir()?, None)
+                    .await?
+                    .with_current_project(package.clone())
+                    .with_context(|| format!("Package `{package}` not found in workspace"))?,
+            )
         } else {
-            ProjectWorkspace::discover(&std::env::current_dir()?, None).await?
+            match ProjectWorkspace::discover(&std::env::current_dir()?, None).await {
+                Ok(project) => Some(project),
+                Err(WorkspaceError::MissingPyprojectToml) => None,
+                Err(err) => return Err(err.into()),
+            }
         };
-        let venv = project::init_environment(
-            project.workspace(),
-            python.as_deref().map(ToolchainRequest::parse),
-            toolchain_preference,
-            connectivity,
-            native_tls,
-            cache,
-            printer,
-        )
-        .await?;
 
-        // Lock and sync the environment.
-        let lock = project::lock::do_lock(
-            project.workspace(),
-            venv.interpreter(),
-            &settings.upgrade,
-            &settings.index_locations,
-            &settings.index_strategy,
-            &settings.keyring_provider,
-            &settings.resolution,
-            &settings.prerelease,
-            &settings.config_setting,
-            settings.exclude_newer.as_ref(),
-            &settings.link_mode,
-            &settings.build_options,
-            preview,
-            connectivity,
-            concurrency,
-            native_tls,
-            cache,
-            printer,
-        )
-        .await?;
-        project::sync::do_sync(
-            project.project_name(),
-            project.workspace().root(),
-            &venv,
-            &lock,
-            extras,
-            dev,
-            Modifications::Sufficient,
-            &settings.reinstall,
-            &settings.index_locations,
-            &settings.index_strategy,
-            &settings.keyring_provider,
-            &settings.config_setting,
-            &settings.link_mode,
-            &settings.compile_bytecode,
-            &settings.build_options,
-            preview,
-            connectivity,
-            concurrency,
-            native_tls,
-            cache,
-            printer,
-        )
-        .await?;
+        let interpreter = if let Some(project) = project {
+            debug!(
+                "Discovered project `{}` at: {}",
+                project.project_name(),
+                project.workspace().root().display()
+            );
 
-        Some(venv)
+            let venv = project::init_environment(
+                project.workspace(),
+                python.as_deref().map(ToolchainRequest::parse),
+                toolchain_preference,
+                connectivity,
+                native_tls,
+                cache,
+                printer,
+            )
+            .await?;
+
+            // Lock and sync the environment.
+            let lock = project::lock::do_lock(
+                project.workspace(),
+                venv.interpreter(),
+                settings.as_ref().into(),
+                preview,
+                connectivity,
+                concurrency,
+                native_tls,
+                cache,
+                printer,
+            )
+            .await?;
+            project::sync::do_sync(
+                project.project_name(),
+                project.workspace().root(),
+                &venv,
+                &lock,
+                extras,
+                dev,
+                Modifications::Sufficient,
+                settings.as_ref().into(),
+                preview,
+                connectivity,
+                concurrency,
+                native_tls,
+                cache,
+                printer,
+            )
+            .await?;
+
+            venv.into_interpreter()
+        } else {
+            debug!("No project found; searching for Python interpreter");
+
+            let client_builder = BaseClientBuilder::new()
+                .connectivity(connectivity)
+                .native_tls(native_tls);
+
+            let toolchain = Toolchain::find_or_fetch(
+                python.as_deref().map(ToolchainRequest::parse),
+                // No opt-in is required for system environments, since we are not mutating it.
+                EnvironmentPreference::Any,
+                toolchain_preference,
+                client_builder,
+                cache,
+            )
+            .await?;
+
+            toolchain.into_interpreter()
+        };
+
+        Some(interpreter)
     };
+
+    if let Some(base_interpreter) = &base_interpreter {
+        debug!(
+            "Using Python {} interpreter at: {}",
+            base_interpreter.python_version(),
+            base_interpreter.sys_executable().display()
+        );
+    }
 
     // If necessary, create an environment for the ephemeral requirements.
     let temp_dir;
@@ -131,14 +158,14 @@ pub(crate) async fn run(
     } else {
         debug!("Syncing ephemeral environment.");
 
-        let client_builder = BaseClientBuilder::new()
-            .connectivity(connectivity)
-            .native_tls(native_tls);
-
         // Discover an interpreter.
-        let interpreter = if let Some(project_env) = &project_env {
-            project_env.interpreter().clone()
+        let interpreter = if let Some(base_interpreter) = &base_interpreter {
+            base_interpreter.clone()
         } else {
+            let client_builder = BaseClientBuilder::new()
+                .connectivity(connectivity)
+                .native_tls(native_tls);
+
             // Note we force preview on during `uv run` for now since the entire interface is in preview
             Toolchain::find_or_fetch(
                 python.as_deref().map(ToolchainRequest::parse),
@@ -210,9 +237,9 @@ pub(crate) async fn run(
             .map(PythonEnvironment::scripts)
             .into_iter()
             .chain(
-                project_env
+                base_interpreter
                     .as_ref()
-                    .map(PythonEnvironment::scripts)
+                    .map(Interpreter::scripts)
                     .into_iter(),
             )
             .map(PathBuf::from)
@@ -233,11 +260,12 @@ pub(crate) async fn run(
             .into_iter()
             .flatten()
             .chain(
-                project_env
+                base_interpreter
                     .as_ref()
-                    .map(PythonEnvironment::site_packages)
+                    .map(Interpreter::site_packages)
                     .into_iter()
-                    .flatten(),
+                    .flatten()
+                    .map(Cow::Borrowed),
             )
             .map(PathBuf::from)
             .chain(
