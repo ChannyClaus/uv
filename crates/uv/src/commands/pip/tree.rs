@@ -158,9 +158,9 @@ impl<'a> DisplayDependencyGraph<'a> {
             "{}{}v{}",
             package_name,
             if let Some(extra_name) = extra {
-                extra_name.as_str()
+                extra_name
             } else {
-                " "
+                " ".to_string()
             },
             installed_dist.version()
         );
@@ -218,7 +218,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             };
 
             let mut prefixed_lines = Vec::new();
-            for extra in extras {
+            for extra in &extras {
                 for (visited_index, visited_line) in self
                     .visit(
                         self.dist_by_package_name[&required_package.name],
@@ -229,7 +229,7 @@ impl<'a> DisplayDependencyGraph<'a> {
                                 .marker
                                 .as_ref()
                                 .unwrap()
-                                .evaluate_optional_environment(None, &[extra])
+                                .evaluate_optional_environment(None, &[extra.clone()])
                         {
                             None
                         } else {
