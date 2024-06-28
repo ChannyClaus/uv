@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use distribution_types::{Diagnostic, InstalledDist, Name};
 use owo_colors::OwoColorize;
+use pep508_rs::ExtraName;
 use tracing::debug;
 use uv_cache::Cache;
 use uv_configuration::PreviewMode;
@@ -184,17 +186,40 @@ impl<'a> DisplayDependencyGraph<'a> {
         path.push(package_name.clone());
         visited.insert(package_name.clone());
 
+        // Need to be able to remove the extras that have already been used
+        // in the event that there are two distinct extras sharing the same dependency.
+        let mut used_extras: BTreeSet<ExtraName> = BTreeSet::new();
         let extras = installed_dist.metadata().unwrap().provides_extras;
         let required_packages = installed_dist
             .metadata()
             .unwrap()
             .requires_dist
             .into_iter()
-            .filter(|d| self.dist_by_package_name.contains_key(&d.name))
+            .filter(|d| {
+                self.dist_by_package_name.contains_key(&d.name) // must be an installed distribution and
+                                                                && (d.marker.is_none() // either always required or
+                                                                    || d // required by an extra
+                                                                        .marker
+                                                                        .as_ref()
+                                                                        .unwrap()
+                                                                        .evaluate_optional_environment(None, &extras.as_slice()))
+            })
             .collect::<Vec<_>>();
 
         for (index, required_package) in required_packages.iter().enumerate() {
-            println!("required_package: {:?}", required_package.name);
+            let extra_index = extras.iter().position(|e| {
+                required_package.marker.is_some()
+                    && required_package
+                        .marker
+                        .as_ref()
+                        .unwrap()
+                        .evaluate_optional_environment(None, &[e.clone()])
+                    && !used_extras.contains(e)
+            });
+            if extra_index.is_some() {
+                used_extras.insert(extras[extra_index.unwrap()].clone());
+            }
+
             // For sub-visited packages, add the prefix to make the tree display user-friendly.
 
             // The key observation here is you can group the tree as follows when you're at the
@@ -227,17 +252,11 @@ impl<'a> DisplayDependencyGraph<'a> {
                     self.dist_by_package_name[&required_package.name],
                     visited,
                     path,
-                    None, // if required_package.marker.is_none()
-                          //     || !required_package
-                          //         .marker
-                          //         .as_ref()
-                          //         .unwrap()
-                          //         .evaluate_optional_environment(None, &extras.as_slice())
-                          // {
-                          //     None
-                          // } else {
-                          //     Some(extra)
-                          // },
+                    if extra_index.is_some() {
+                        Some(extras[extra_index.unwrap()].to_string())
+                    } else {
+                        None
+                    },
                 )
                 .iter()
                 .enumerate()
