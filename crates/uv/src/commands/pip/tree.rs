@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use distribution_types::{Diagnostic, InstalledDist, Name};
 use owo_colors::OwoColorize;
+use pep508_rs::ExtraName;
 use tracing::debug;
 use uv_cache::Cache;
 use uv_configuration::PreviewMode;
@@ -15,8 +17,6 @@ use uv_toolchain::ToolchainRequest;
 use crate::commands::ExitStatus;
 use crate::printer::Printer;
 use std::collections::{HashMap, HashSet};
-
-use pypi_types::VerbatimParsedUrl;
 
 /// Display the installed packages in the current environment as a dependency tree.
 #[allow(clippy::too_many_arguments)]
@@ -77,32 +77,13 @@ pub(crate) fn pip_tree(
     Ok(ExitStatus::Success)
 }
 
-// Filter out all required packages of the given distribution if they
-// are required by an extra.
-// For example, `requests==2.32.3` requires `charset-normalizer`, `idna`, `urllib`, and `certifi` at
-// all times, `PySocks` on `socks` extra and `chardet` on `use_chardet_on_py3` extra.
-// This function will return `["charset-normalizer", "idna", "urllib", "certifi"]` for `requests`.
-fn required_with_no_extra(dist: &InstalledDist) -> Vec<pep508_rs::Requirement<VerbatimParsedUrl>> {
-    let metadata = dist.metadata().unwrap();
-    return metadata
-        .requires_dist
-        .into_iter()
-        .filter(|r| {
-            r.marker.is_none()
-                || !r
-                    .marker
-                    .as_ref()
-                    .unwrap()
-                    .evaluate_optional_environment(None, &metadata.provides_extras[..])
-        })
-        .collect::<Vec<_>>();
-}
-
 #[derive(Debug)]
 struct DisplayDependencyGraph<'a> {
     site_packages: &'a SitePackages,
+
     // Map from package name to the installed distribution.
     dist_by_package_name: HashMap<&'a PackageName, &'a InstalledDist>,
+
     // Set of package names that are required by at least one installed distribution.
     // It is used to determine the starting nodes when recursing the
     // dependency graph.
@@ -132,7 +113,14 @@ impl<'a> DisplayDependencyGraph<'a> {
             dist_by_package_name.insert(site_package.name(), site_package);
         }
         for site_package in site_packages.iter() {
-            for required in required_with_no_extra(site_package) {
+            for required in site_package
+                .metadata()
+                .unwrap()
+                .requires_dist
+                .into_iter()
+                .filter(|d| dist_by_package_name.contains_key(&d.name))
+                .collect::<Vec<_>>()
+            {
                 required_packages.insert(required.name.clone());
             }
         }
@@ -153,7 +141,14 @@ impl<'a> DisplayDependencyGraph<'a> {
         installed_dist: &InstalledDist,
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
+        extra: Option<String>,
     ) -> Vec<String> {
+        // println!(
+        //     "visit {} {} {}",
+        //     installed_dist.name(),
+        //     installed_dist.version(),
+        //     extra.clone().unwrap_or("".to_string())
+        // );
         // Short-circuit if the current path is longer than the provided depth.
         if path.len() > self.depth {
             return Vec::new();
@@ -165,8 +160,16 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
 
         let package_name = installed_dist.name().to_string();
-        let is_visited = visited.contains(&package_name);
-        let line = format!("{} v{}", package_name, installed_dist.version());
+        let line = format!(
+            "{}{} v{}",
+            if let Some(extra_name) = extra {
+                format!("[{}] ", extra_name)
+            } else {
+                "".to_string()
+            },
+            package_name,
+            installed_dist.version()
+        );
 
         if path.contains(&package_name) {
             return vec![format!("{} (#)", line)];
@@ -174,7 +177,7 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         // If the package has been visited and de-duplication is enabled (default),
         // skip the traversal.
-        if is_visited && !self.no_dedupe {
+        if visited.contains(&package_name) && !self.no_dedupe {
             return vec![format!("{} (*)", line)];
         }
 
@@ -182,17 +185,44 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         path.push(package_name.clone());
         visited.insert(package_name.clone());
-        let required_packages = required_with_no_extra(installed_dist);
+
+        // Need to be able to remove the extras that have already been used
+        // in the event that there are two distinct extras sharing the same dependency.
+        let mut used_extras: BTreeSet<ExtraName> = BTreeSet::new();
+        let extras = installed_dist.metadata().unwrap().provides_extras;
+        println!("provided extras: {:?}", extras);
+        let required_packages = installed_dist
+            .metadata()
+            .unwrap()
+            .requires_dist
+            .into_iter()
+            .filter(|d| {
+                self.dist_by_package_name.contains_key(&d.name) // must be an installed distribution and
+                                                                && (d.marker.is_none() // either always required or
+                                                                    || d // required by an extra
+                                                                        .marker
+                                                                        .as_ref()
+                                                                        .unwrap()
+                                                                        .evaluate_optional_environment(None, &extras.as_slice()))
+            })
+            .collect::<Vec<_>>();
+
         for (index, required_package) in required_packages.iter().enumerate() {
-            // Skip if the current package is not one of the installed distributions.
-            if !self
-                .dist_by_package_name
-                .contains_key(&required_package.name)
-            {
-                continue;
+            let extra_index = extras.iter().position(|e| {
+                required_package.marker.is_some()
+                    && required_package
+                        .marker
+                        .as_ref()
+                        .unwrap()
+                        .evaluate_optional_environment(None, &[e.clone()])
+                    && !used_extras.contains(e)
+            });
+            if extra_index.is_some() {
+                used_extras.insert(extras[extra_index.unwrap()].clone());
             }
 
             // For sub-visited packages, add the prefix to make the tree display user-friendly.
+
             // The key observation here is you can group the tree as follows when you're at the
             // root of the tree:
             // root_package
@@ -223,6 +253,11 @@ impl<'a> DisplayDependencyGraph<'a> {
                     self.dist_by_package_name[&required_package.name],
                     visited,
                     path,
+                    if extra_index.is_some() {
+                        Some(extras[extra_index.unwrap()].to_string())
+                    } else {
+                        None
+                    },
                 )
                 .iter()
                 .enumerate()
@@ -252,7 +287,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             // If the current package is not required by any other package, start the traversal
             // with the current package as the root.
             if !self.required_packages.contains(site_package.name()) {
-                lines.extend(self.visit(site_package, &mut visited, &mut Vec::new()));
+                lines.extend(self.visit(site_package, &mut visited, &mut Vec::new(), None));
             }
         }
         lines
