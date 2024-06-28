@@ -77,32 +77,13 @@ pub(crate) fn pip_tree(
     Ok(ExitStatus::Success)
 }
 
-// Filter out all required packages of the given distribution if they
-// are required by an extra.
-// For example, `requests==2.32.3` requires `charset-normalizer`, `idna`, `urllib`, and `certifi` at
-// all times, `PySocks` on `socks` extra and `chardet` on `use_chardet_on_py3` extra.
-// This function will return `["charset-normalizer", "idna", "urllib", "certifi"]` for `requests`.
-fn required_with_no_extra(dist: &InstalledDist) -> Vec<pep508_rs::Requirement<VerbatimParsedUrl>> {
-    let metadata = dist.metadata().unwrap();
-    return metadata
-        .requires_dist
-        .into_iter()
-        .filter(|r| {
-            r.marker.is_none()
-                || !r
-                    .marker
-                    .as_ref()
-                    .unwrap()
-                    .evaluate_optional_environment(None, &metadata.provides_extras[..])
-        })
-        .collect::<Vec<_>>();
-}
-
 #[derive(Debug)]
 struct DisplayDependencyGraph<'a> {
     site_packages: &'a SitePackages,
+
     // Map from package name to the installed distribution.
     dist_by_package_name: HashMap<&'a PackageName, &'a InstalledDist>,
+
     // Set of package names that are required by at least one installed distribution.
     // It is used to determine the starting nodes when recursing the
     // dependency graph.
@@ -132,7 +113,14 @@ impl<'a> DisplayDependencyGraph<'a> {
             dist_by_package_name.insert(site_package.name(), site_package);
         }
         for site_package in site_packages.iter() {
-            for required in required_with_no_extra(site_package) {
+            for required in site_package
+                .metadata()
+                .unwrap()
+                .requires_dist
+                .into_iter()
+                .filter(|d| true)
+                .collect::<Vec<_>>()
+            {
                 required_packages.insert(required.name.clone());
             }
         }
@@ -182,17 +170,17 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         path.push(package_name.clone());
         visited.insert(package_name.clone());
-        let required_packages = required_with_no_extra(installed_dist);
-        for (index, required_package) in required_packages.iter().enumerate() {
-            // Skip if the current package is not one of the installed distributions.
-            if !self
-                .dist_by_package_name
-                .contains_key(&required_package.name)
-            {
-                continue;
-            }
+        let required_packages = installed_dist
+            .metadata()
+            .unwrap()
+            .requires_dist
+            .into_iter()
+            .filter(|d| self.dist_by_package_name.contains_key(&d.name))
+            .collect::<Vec<_>>();
 
+        for (index, required_package) in required_packages.iter().enumerate() {
             // For sub-visited packages, add the prefix to make the tree display user-friendly.
+
             // The key observation here is you can group the tree as follows when you're at the
             // root of the tree:
             // root_package
