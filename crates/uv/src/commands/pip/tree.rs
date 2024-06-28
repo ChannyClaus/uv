@@ -141,6 +141,7 @@ impl<'a> DisplayDependencyGraph<'a> {
         installed_dist: &InstalledDist,
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
+        extra: Option<String>,
     ) -> Vec<String> {
         // Short-circuit if the current path is longer than the provided depth.
         if path.len() > self.depth {
@@ -153,8 +154,16 @@ impl<'a> DisplayDependencyGraph<'a> {
         }
 
         let package_name = installed_dist.name().to_string();
-        let is_visited = visited.contains(&package_name);
-        let line = format!("{} v{}", package_name, installed_dist.version());
+        let line = format!(
+            "{}{}v{}",
+            package_name,
+            if let Some(extra_name) = extra {
+                extra_name.as_str()
+            } else {
+                " "
+            },
+            installed_dist.version()
+        );
 
         if path.contains(&package_name) {
             return vec![format!("{} (#)", line)];
@@ -162,7 +171,7 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         // If the package has been visited and de-duplication is enabled (default),
         // skip the traversal.
-        if is_visited && !self.no_dedupe {
+        if visited.contains(&package_name) && !self.no_dedupe {
             return vec![format!("{} (*)", line)];
         }
 
@@ -170,6 +179,8 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         path.push(package_name.clone());
         visited.insert(package_name.clone());
+
+        let extras = installed_dist.metadata().unwrap().provides_extras;
         let required_packages = installed_dist
             .metadata()
             .unwrap()
@@ -179,6 +190,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             .collect::<Vec<_>>();
 
         for (index, required_package) in required_packages.iter().enumerate() {
+            // println!("required_package.marker: {:#?}", required_package.marker);
             // For sub-visited packages, add the prefix to make the tree display user-friendly.
 
             // The key observation here is you can group the tree as follows when you're at the
@@ -206,24 +218,37 @@ impl<'a> DisplayDependencyGraph<'a> {
             };
 
             let mut prefixed_lines = Vec::new();
-            for (visited_index, visited_line) in self
-                .visit(
-                    self.dist_by_package_name[&required_package.name],
-                    visited,
-                    path,
-                )
-                .iter()
-                .enumerate()
-            {
-                prefixed_lines.push(format!(
-                    "{}{}",
-                    if visited_index == 0 {
-                        prefix_top
-                    } else {
-                        prefix_rest
-                    },
-                    visited_line
-                ));
+            for extra in extras {
+                for (visited_index, visited_line) in self
+                    .visit(
+                        self.dist_by_package_name[&required_package.name],
+                        visited,
+                        path,
+                        if required_package.marker.is_none()
+                            || !required_package
+                                .marker
+                                .as_ref()
+                                .unwrap()
+                                .evaluate_optional_environment(None, &[extra])
+                        {
+                            None
+                        } else {
+                            Some(extra.to_string())
+                        },
+                    )
+                    .iter()
+                    .enumerate()
+                {
+                    prefixed_lines.push(format!(
+                        "{}{}",
+                        if visited_index == 0 {
+                            prefix_top
+                        } else {
+                            prefix_rest
+                        },
+                        visited_line
+                    ));
+                }
             }
             lines.extend(prefixed_lines);
         }
@@ -240,7 +265,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             // If the current package is not required by any other package, start the traversal
             // with the current package as the root.
             if !self.required_packages.contains(site_package.name()) {
-                lines.extend(self.visit(site_package, &mut visited, &mut Vec::new()));
+                lines.extend(self.visit(site_package, &mut visited, &mut Vec::new(), None));
             }
         }
         lines
