@@ -141,6 +141,12 @@ impl<'a> DisplayDependencyGraph<'a> {
         path: &mut Vec<String>,
         extra: Option<String>,
     ) -> Vec<String> {
+        // println!(
+        //     "visit {} {} {}",
+        //     installed_dist.name(),
+        //     installed_dist.version(),
+        //     extra.clone().unwrap_or("".to_string())
+        // );
         // Short-circuit if the current path is longer than the provided depth.
         if path.len() > self.depth {
             return Vec::new();
@@ -188,7 +194,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             .collect::<Vec<_>>();
 
         for (index, required_package) in required_packages.iter().enumerate() {
-            // println!("required_package.marker: {:#?}", required_package.marker);
+            println!("required_package: {:?}", required_package.name);
             // For sub-visited packages, add the prefix to make the tree display user-friendly.
 
             // The key observation here is you can group the tree as follows when you're at the
@@ -216,37 +222,35 @@ impl<'a> DisplayDependencyGraph<'a> {
             };
 
             let mut prefixed_lines = Vec::new();
-            for extra in &extras {
-                for (visited_index, visited_line) in self
-                    .visit(
-                        self.dist_by_package_name[&required_package.name],
-                        visited,
-                        path,
-                        if required_package.marker.is_none()
-                            || !required_package
-                                .marker
-                                .as_ref()
-                                .unwrap()
-                                .evaluate_optional_environment(None, &[extra.clone()])
-                        {
-                            None
-                        } else {
-                            Some(extra.to_string())
-                        },
-                    )
-                    .iter()
-                    .enumerate()
-                {
-                    prefixed_lines.push(format!(
-                        "{}{}",
-                        if visited_index == 0 {
-                            prefix_top
-                        } else {
-                            prefix_rest
-                        },
-                        visited_line
-                    ));
-                }
+            for (visited_index, visited_line) in self
+                .visit(
+                    self.dist_by_package_name[&required_package.name],
+                    visited,
+                    path,
+                    None, // if required_package.marker.is_none()
+                          //     || !required_package
+                          //         .marker
+                          //         .as_ref()
+                          //         .unwrap()
+                          //         .evaluate_optional_environment(None, &extras.as_slice())
+                          // {
+                          //     None
+                          // } else {
+                          //     Some(extra)
+                          // },
+                )
+                .iter()
+                .enumerate()
+            {
+                prefixed_lines.push(format!(
+                    "{}{}",
+                    if visited_index == 0 {
+                        prefix_top
+                    } else {
+                        prefix_rest
+                    },
+                    visited_line
+                ));
             }
             lines.extend(prefixed_lines);
         }
