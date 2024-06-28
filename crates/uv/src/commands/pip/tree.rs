@@ -161,13 +161,13 @@ impl<'a> DisplayDependencyGraph<'a> {
 
         let package_name = installed_dist.name().to_string();
         let line = format!(
-            "{}{}v{}",
-            package_name,
+            "{}{} v{}",
             if let Some(extra_name) = extra {
-                format!(" extra [{}] ", extra_name)
+                format!("[{}] ", extra_name)
             } else {
-                " ".to_string()
+                "".to_string()
             },
+            package_name,
             installed_dist.version()
         );
 
@@ -190,6 +190,7 @@ impl<'a> DisplayDependencyGraph<'a> {
         // in the event that there are two distinct extras sharing the same dependency.
         let mut used_extras: BTreeSet<ExtraName> = BTreeSet::new();
         let extras = installed_dist.metadata().unwrap().provides_extras;
+        println!("provided extras: {:?}", extras);
         let required_packages = installed_dist
             .metadata()
             .unwrap()
