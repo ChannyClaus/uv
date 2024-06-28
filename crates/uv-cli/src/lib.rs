@@ -569,9 +569,17 @@ pub struct PipCompileArgs {
     pub python_platform: Option<TargetTriple>,
 
     /// Perform a universal resolution, attempting to generate a single `requirements.txt` output
-    /// file that is compatible with all operating systems, architectures and supported Python
-    /// versions.
-    #[arg(long, overrides_with("no_universal"))]
+    /// file that is compatible with all operating systems, architectures, and Python
+    /// implementations.
+    ///
+    /// In universal mode, the current Python version (or user-provided `--python-version`) will be
+    /// treated as a lower bound. For example, `--universal --python-version 3.7` would produce a
+    /// universal resolution for Python 3.7 and later.
+    #[arg(
+        long,
+        overrides_with("no_universal"),
+        conflicts_with("python_platform")
+    )]
     pub universal: bool,
 
     #[arg(long, overrides_with("universal"), hide = true)]
@@ -1497,7 +1505,9 @@ pub struct VenvArgs {
     #[arg(long, overrides_with("system"), hide = true)]
     pub no_system: bool,
 
-    /// Install seed packages (`pip`, `setuptools`, and `wheel`) into the virtual environment.
+    /// Install seed packages (one or more of: `pip`, `setuptools`, and `wheel`) into the virtual environment.
+    ///
+    /// Note `setuptools` and `wheel` are not included in Python 3.12+ environments.
     #[arg(long)]
     pub seed: bool,
 
@@ -1545,7 +1555,7 @@ pub struct VenvArgs {
     /// The strategy to use when resolving against multiple index URLs.
     ///
     /// By default, `uv` will stop at the first index on which a given package is available, and
-    /// limit resolutions to those present on that first index (`first-match`. This prevents
+    /// limit resolutions to those present on that first index (`first-match`). This prevents
     /// "dependency confusion" attacks, whereby an attack can upload a malicious package under the
     /// same name to a secondary
     #[arg(long, value_enum, env = "UV_INDEX_STRATEGY")]
@@ -1861,6 +1871,13 @@ pub enum ToolCommand {
 #[allow(clippy::struct_excessive_bools)]
 pub struct ToolRunArgs {
     /// The command to run.
+    ///
+    /// By default, the package to install is assumed to match the command name.
+    ///
+    /// The name of the command can include an exact version in the format `<package>@<version>`.
+    ///
+    /// If more complex version specification is desired or if the command is provided by a different
+    /// package, use `--from`.
     #[command(subcommand)]
     pub command: ExternalCommand,
 
@@ -1901,13 +1918,13 @@ pub struct ToolRunArgs {
 #[derive(Args)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ToolInstallArgs {
-    /// The command to install.
-    pub name: String,
+    /// The package to install commands from.
+    pub package: String,
 
-    /// Use the given package to provide the command.
+    /// The package to install commands from.
     ///
-    /// By default, the package name is assumed to match the command name.
-    #[arg(long)]
+    /// This option is provided for parity with `uv tool run`, but is redundant with `package`.
+    #[arg(long, hide = true)]
     pub from: Option<String>,
 
     /// Include the following extra requirements.
