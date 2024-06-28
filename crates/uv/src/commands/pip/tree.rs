@@ -16,8 +16,6 @@ use crate::commands::ExitStatus;
 use crate::printer::Printer;
 use std::collections::{HashMap, HashSet};
 
-use pypi_types::VerbatimParsedUrl;
-
 /// Display the installed packages in the current environment as a dependency tree.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn pip_tree(
@@ -118,7 +116,7 @@ impl<'a> DisplayDependencyGraph<'a> {
                 .unwrap()
                 .requires_dist
                 .into_iter()
-                .filter(|d| true)
+                .filter(|d| dist_by_package_name.contains_key(&d.name))
                 .collect::<Vec<_>>()
             {
                 required_packages.insert(required.name.clone());
@@ -158,7 +156,7 @@ impl<'a> DisplayDependencyGraph<'a> {
             "{}{}v{}",
             package_name,
             if let Some(extra_name) = extra {
-                extra_name
+                format!(" extra [{}] ", extra_name)
             } else {
                 " ".to_string()
             },
